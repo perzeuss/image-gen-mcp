@@ -8,6 +8,12 @@ updates:
     commit-message:
       prefix: "chore"
       include: scope
+    ignore:
+      # Bundled deep inside the `npm` CLI that semantic-release pulls in at
+      # release time only. Dev-only (the shipped image is built with
+      # --omit=dev) and not updatable from our manifest, so Dependabot's
+      # security update for it can't succeed. Tracked via npm audit instead.
+      - dependency-name: "picomatch"
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
