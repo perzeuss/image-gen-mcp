@@ -1,0 +1,28 @@
+{
+  "name": "image-gen-mcp",
+  "version": "1.0.0",
+  "description": "Remote MCP server for OpenRouter image generation, usable as a Claude custom connector. Generates images, stores them on the server and returns a public link.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "image-gen-mcp": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsc --watch"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "express": "^5.1.0",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0"
+  }
+}

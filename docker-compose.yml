@@ -1,0 +1,54 @@
+# Docker Compose deployment for Dokploy.
+#
+# In Dokploy: create a "Compose" application, point it at this repository and
+# set the environment variables below in the Dokploy "Environment" tab. Attach
+# a domain to the service in the Dokploy UI (Dokploy injects the Traefik labels
+# and TLS automatically) and set PUBLIC_BASE_URL to that domain so the shared
+# image links are stable.
+
+services:
+  image-gen-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    # Or use a prebuilt image instead of building:
+    # image: ghcr.io/perzeuss/image-gen-mcp:latest
+    restart: unless-stopped
+    environment:
+      # --- Required ---------------------------------------------------------
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:?set OPENROUTER_API_KEY}
+
+      # --- Model configuration ---------------------------------------------
+      # Chat-style image model (NanoBanana / Gemini Flash Image, GPT image, ...)
+      #   IMAGE_MODEL: google/gemini-2.5-flash-image
+      # Pure image model (Flux, ...)
+      #   IMAGE_MODEL: black-forest-labs/flux.2-pro
+      IMAGE_MODEL: ${IMAGE_MODEL:-google/gemini-2.5-flash-image}
+      # auto | chat | image  (auto-detects from the model id when "auto")
+      IMAGE_MODEL_TYPE: ${IMAGE_MODEL_TYPE:-auto}
+
+      # --- Public links -----------------------------------------------------
+      # Domain attached to this service in Dokploy. Used to build shareable
+      # image links, e.g. https://images.example.com/images/<file>.
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
+
+      # --- Optional ---------------------------------------------------------
+      PORT: ${PORT:-3000}
+      # Protect the /mcp endpoint with a bearer token (recommended for a
+      # public deployment, since the server holds your OpenRouter key).
+      MCP_AUTH_TOKEN: ${MCP_AUTH_TOKEN:-}
+      DEFAULT_ASPECT_RATIO: ${DEFAULT_ASPECT_RATIO:-}
+      DEFAULT_IMAGE_SIZE: ${DEFAULT_IMAGE_SIZE:-}
+      REQUEST_TIMEOUT_MS: ${REQUEST_TIMEOUT_MS:-120000}
+      IMAGE_STORAGE_DIR: /app/data/images
+    volumes:
+      # Persist generated images across redeploys.
+      - image-data:/app/data/images
+    expose:
+      - "3000"
+    # For local testing without a reverse proxy, publish the port directly:
+    # ports:
+    #   - "3000:3000"
+
+volumes:
+  image-data:
