@@ -51,6 +51,22 @@ docs(readme): clarify R2 public URL setup
 Breaking changes: add a `!` after the type/scope (`feat!: ...`) or a
 `BREAKING CHANGE:` footer.
 
+## Releases
+
+Releases are fully automated with
+[semantic-release](https://semantic-release.gitbook.io/). On every push to
+`main`, the release workflow analyses the commit messages and, when there's a
+releasable change, bumps the version, updates `CHANGELOG.md`, creates a Git tag
+and a GitHub Release, and comments on the related PRs.
+
+Version bumps follow the commit types: `fix` → patch, `feat` → minor,
+`BREAKING CHANGE` → major. Types like `chore`, `docs`, `ci`, `build`, `refactor`
+and `test` don't trigger a release on their own.
+
+> Because the changelog commit is pushed back to `main`, `main` must allow the
+> `github-actions` bot to push (disable/adjust branch protection accordingly,
+> or provide a token that can bypass it).
+
 ## Pull requests
 
 - Keep PRs focused and reasonably small.

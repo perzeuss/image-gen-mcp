@@ -35,7 +35,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "release": "semantic-release"
   },
   "engines": {
     "node": ">=22"
@@ -50,11 +51,14 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@semantic-release/changelog": "^6.0.3",
+    "@semantic-release/git": "^10.0.1",
     "@types/express": "^5.0.0",
     "@types/node": "^25.9.1",
     "eslint": "^10.4.0",
     "globals": "^17.6.0",
     "prettier": "^3.4.0",
+    "semantic-release": "^24.2.9",
     "tsx": "^4.19.0",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.18.0"
