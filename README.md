@@ -11,6 +11,7 @@ and ask Claude to create images for you. Every image is stored and returned as a
 Powered by [OpenRouter](https://openrouter.ai) — use **NanoBanana / Gemini Flash Image**,
 **Flux**, **GPT Image**, **Seedream** and more, all behind one connector.
 
+[![CI](https://github.com/perzeuss/image-gen-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/perzeuss/image-gen-mcp/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
 ![Node](https://img.shields.io/badge/node-22%20%7C%2024%20LTS-339933?logo=node.js&logoColor=white)
 ![MCP](https://img.shields.io/badge/MCP-remote%20connector-6E56CF)
@@ -21,7 +22,7 @@ Powered by [OpenRouter](https://openrouter.ai) — use **NanoBanana / Gemini Fla
 
 ## ✨ Why
 
-Claude is great at *designing* mockups, landing pages and UI concepts — but it
+Claude is great at _designing_ mockups, landing pages and UI concepts — but it
 can only describe images, not produce them. This connector closes that gap:
 
 - 🖼️ **Real images for mockups** — ask Claude to design a layout and have it fill
@@ -37,10 +38,10 @@ can only describe images, not produce them. This connector closes that gap:
 
 ## 🧠 Supported models
 
-| Kind | Examples | How it's driven |
-|------|----------|-----------------|
-| **Chat-style image models** | `google/gemini-2.5-flash-image` (NanoBanana), `openai/gpt-5-image` | Chat models that *also* emit images → `modalities: ["image", "text"]` |
-| **Dedicated image models** | `black-forest-labs/flux.2-pro`, `bytedance/seedream-4.5` | Pure image generators → `modalities: ["image"]` |
+| Kind                        | Examples                                                           | How it's driven                                                       |
+| --------------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------- |
+| **Chat-style image models** | `google/gemini-2.5-flash-image` (NanoBanana), `openai/gpt-5-image` | Chat models that _also_ emit images → `modalities: ["image", "text"]` |
+| **Dedicated image models**  | `black-forest-labs/flux.2-pro`, `bytedance/seedream-4.5`           | Pure image generators → `modalities: ["image"]`                       |
 
 The model type is auto-detected from the model id and can be overridden — see
 [Configuration](#%EF%B8%8F-configuration).
@@ -86,26 +87,37 @@ connector at `https://<your-deployment-url>/mcp`.
 Claude authenticates custom connectors via **OAuth** (with dynamic client
 registration), so enable the built-in OAuth server first:
 
-1. Set **`OAUTH_PASSWORD`** (the password you'll enter to authorize) and
-   **`OAUTH_ISSUER_URL`** (or `PUBLIC_BASE_URL`) to this server's public
-   **https** URL. For production also set a long random **`OAUTH_SIGNING_SECRET`**.
+1. Configure the OAuth env vars on your deployment:
+
+   ```bash
+   OAUTH_PASSWORD=<the password you'll enter to authorize>
+   OAUTH_ISSUER_URL=https://<your-domain>        # or rely on PUBLIC_BASE_URL; must be https
+   OAUTH_SIGNING_SECRET=<long random value>       # e.g. openssl rand -hex 32
+   ```
+
 2. In Claude, open **Settings → Connectors → Add custom connector**.
-3. **Remote MCP server URL:** `https://<your-domain>/mcp`
+3. **Remote MCP server URL:** `https://<your-domain>/mcp` (note the `/mcp`).
 4. Save. Claude registers itself, then opens a consent screen — enter your
    `OAUTH_PASSWORD` to authorize.
-5. Start a chat and ask Claude to *“generate an image of …”*.
+5. Start a chat and ask Claude to _“generate an image of …”_.
 
 > No `OAuth Client ID`/secret to fill in by hand — the server supports dynamic
 > client registration, so Claude provisions itself automatically.
+
+> **Requirements:** the server must be reachable over **public HTTPS** with a
+> valid certificate, and the whole host (not just `/mcp`) must be routed to it
+> so Claude can fetch `/.well-known/*` and call `/authorize`, `/token` and
+> `/register`. Verify with `curl https://<your-domain>/health` →
+> `"auth":"oauth"`.
 
 Anthropic's guide:
 [Get started with custom connectors using remote MCP](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp).
 
 ### Using it for mockups
 
-> *“Design a landing page for a coffee subscription. Use the connector to
+> _“Design a landing page for a coffee subscription. Use the connector to
 > generate a warm, photographic hero image (16:9) and three product shots, and
-> embed the links in the mockup.”*
+> embed the links in the mockup.”_
 
 Claude calls `generate_image`, gets back public URLs, and drops the real images
 straight into the artifact it's building.
@@ -114,33 +126,33 @@ straight into the artifact it's building.
 
 ## 🛠️ Tools
 
-| Tool | Description |
-|------|-------------|
-| `generate_image` | Generate an image from a prompt. Params: `prompt` (required), `aspect_ratio`, `image_size`, `negative_prompt`, `seed`, `reference_image` (image-to-image). Returns the inline image **and** its public URL. |
-| `get_image_model_info` | Report the configured model and how it's driven (chat vs. image). |
+| Tool                   | Description                                                                                                                                                                                                 |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `generate_image`       | Generate an image from a prompt. Params: `prompt` (required), `aspect_ratio`, `image_size`, `negative_prompt`, `seed`, `reference_image` (image-to-image). Returns the inline image **and** its public URL. |
+| `get_image_model_info` | Report the configured model and how it's driven (chat vs. image).                                                                                                                                           |
 
 ## ⚙️ Configuration
 
 All configuration is via environment variables.
 
-| Variable | Required | Default | Description |
-|----------|:--------:|---------|-------------|
-| `OPENROUTER_API_KEY` | ✅ | — | OpenRouter API key. |
-| `IMAGE_MODEL` | | `google/gemini-2.5-flash-image` | OpenRouter model id. |
-| `IMAGE_MODEL_TYPE` | | `auto` | `auto` \| `chat` \| `image`. `auto` detects from the model id (Flux/Recraft/Seedream/Riverflow/Ideogram/… ⇒ `image`, otherwise `chat`). |
-| `PUBLIC_BASE_URL` | | _(request host)_ | Public base URL for **local** image links, e.g. `https://images.example.com`. Set this in production. |
-| `PORT` | | `3000` | Listen port. |
-| `HOST` | | `0.0.0.0` | Bind address. |
-| `IMAGE_STORAGE_DIR` | | `./data/images` | Local storage directory (ignored when R2 is used). |
-| `MCP_AUTH_TOKEN` | | _(none)_ | If set, `POST /mcp` requires `Authorization: Bearer <token>`. |
-| `DEFAULT_ASPECT_RATIO` | | _(none)_ | Default aspect ratio when a request omits one. |
-| `DEFAULT_IMAGE_SIZE` | | _(none)_ | Default image size (`1K`/`2K`/`4K`). |
-| `REQUEST_TIMEOUT_MS` | | `120000` | OpenRouter request timeout. |
-| `TRUST_PROXY` | | `true` | Trust `X-Forwarded-*` headers (keep on behind a proxy). |
-| `MAX_BODY_SIZE` | | `25mb` | Max accepted request body size. |
-| `RATE_LIMIT_MAX` | | `60` | Per-IP requests per window (`0` disables). |
-| `RATE_LIMIT_WINDOW_MS` | | `60000` | Rate-limit window in ms. |
-| `ALLOWED_ORIGINS` | | _(all)_ | Comma-separated `Origin` allow-list for `/mcp`. |
+| Variable               | Required | Default                         | Description                                                                                                                             |
+| ---------------------- | :------: | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `OPENROUTER_API_KEY`   |    ✅    | —                               | OpenRouter API key.                                                                                                                     |
+| `IMAGE_MODEL`          |          | `google/gemini-2.5-flash-image` | OpenRouter model id.                                                                                                                    |
+| `IMAGE_MODEL_TYPE`     |          | `auto`                          | `auto` \| `chat` \| `image`. `auto` detects from the model id (Flux/Recraft/Seedream/Riverflow/Ideogram/… ⇒ `image`, otherwise `chat`). |
+| `PUBLIC_BASE_URL`      |          | _(request host)_                | Public base URL for **local** image links, e.g. `https://images.example.com`. Set this in production.                                   |
+| `PORT`                 |          | `3000`                          | Listen port.                                                                                                                            |
+| `HOST`                 |          | `0.0.0.0`                       | Bind address.                                                                                                                           |
+| `IMAGE_STORAGE_DIR`    |          | `./data/images`                 | Local storage directory (ignored when R2 is used).                                                                                      |
+| `MCP_AUTH_TOKEN`       |          | _(none)_                        | If set, `POST /mcp` requires `Authorization: Bearer <token>`.                                                                           |
+| `DEFAULT_ASPECT_RATIO` |          | _(none)_                        | Default aspect ratio when a request omits one.                                                                                          |
+| `DEFAULT_IMAGE_SIZE`   |          | _(none)_                        | Default image size (`1K`/`2K`/`4K`).                                                                                                    |
+| `REQUEST_TIMEOUT_MS`   |          | `120000`                        | OpenRouter request timeout.                                                                                                             |
+| `TRUST_PROXY`          |          | `true`                          | Trust `X-Forwarded-*` headers (keep on behind a proxy).                                                                                 |
+| `MAX_BODY_SIZE`        |          | `25mb`                          | Max accepted request body size.                                                                                                         |
+| `RATE_LIMIT_MAX`       |          | `60`                            | Per-IP requests per window (`0` disables).                                                                                              |
+| `RATE_LIMIT_WINDOW_MS` |          | `60000`                         | Rate-limit window in ms.                                                                                                                |
+| `ALLOWED_ORIGINS`      |          | _(all)_                         | Comma-separated `Origin` allow-list for `/mcp`.                                                                                         |
 
 ### OAuth (for the Claude connector)
 
@@ -148,13 +160,13 @@ Setting `OAUTH_PASSWORD` enables a built-in OAuth 2.1 authorization server
 (discovery, dynamic client registration, PKCE, refresh tokens) so the server
 can be used as a Claude custom connector.
 
-| Variable | Required | Default | Description |
-|----------|:--------:|---------|-------------|
-| `OAUTH_PASSWORD` | _(enables OAuth)_ | — | Password entered on the consent screen to authorize a client. |
-| `OAUTH_ISSUER_URL` | ✅ when OAuth on | `PUBLIC_BASE_URL` | Public **https** URL of this server (issuer / resource id). |
-| `OAUTH_SIGNING_SECRET` | | _(random)_ | HMAC secret for signing tokens. Set in production so tokens survive restarts. |
-| `OAUTH_ACCESS_TOKEN_TTL` | | `3600` | Access-token lifetime (seconds). |
-| `OAUTH_REFRESH_TOKEN_TTL` | | `2592000` | Refresh-token lifetime (seconds). |
+| Variable                  |     Required      | Default           | Description                                                                   |
+| ------------------------- | :---------------: | ----------------- | ----------------------------------------------------------------------------- |
+| `OAUTH_PASSWORD`          | _(enables OAuth)_ | —                 | Password entered on the consent screen to authorize a client.                 |
+| `OAUTH_ISSUER_URL`        | ✅ when OAuth on  | `PUBLIC_BASE_URL` | Public **https** URL of this server (issuer / resource id).                   |
+| `OAUTH_SIGNING_SECRET`    |                   | _(random)_        | HMAC secret for signing tokens. Set in production so tokens survive restarts. |
+| `OAUTH_ACCESS_TOKEN_TTL`  |                   | `3600`            | Access-token lifetime (seconds).                                              |
+| `OAUTH_REFRESH_TOKEN_TTL` |                   | `2592000`         | Refresh-token lifetime (seconds).                                             |
 
 ### Cloudflare R2 storage (optional, preferred when configured)
 
@@ -162,17 +174,36 @@ Set the `R2_*` variables to store images in **Cloudflare R2** and serve them
 directly from Cloudflare instead of local disk. Setting any `R2_` variable
 enables R2 and requires the full set below.
 
-| Variable | Required | Description |
-|----------|:--------:|-------------|
-| `R2_BUCKET` | ✅ | R2 bucket name. |
-| `R2_ACCESS_KEY_ID` | ✅ | R2 access key id. |
-| `R2_SECRET_ACCESS_KEY` | ✅ | R2 secret access key. |
-| `R2_ACCOUNT_ID` | ✅* | Cloudflare account id (endpoint derived as `https://<id>.r2.cloudflarestorage.com`). |
-| `R2_ENDPOINT` | ✅* | Full S3 endpoint — alternative to `R2_ACCOUNT_ID`. |
-| `R2_PUBLIC_BASE_URL` | ✅ | Public bucket/custom-domain URL, e.g. `https://images.example.com` or `https://pub-xxxx.r2.dev`. |
-| `R2_KEY_PREFIX` | | Optional object key prefix (folder). |
+| Variable               | Required | Description                                                                                      |
+| ---------------------- | :------: | ------------------------------------------------------------------------------------------------ |
+| `R2_BUCKET`            |    ✅    | R2 bucket name.                                                                                  |
+| `R2_ACCESS_KEY_ID`     |    ✅    | R2 access key id.                                                                                |
+| `R2_SECRET_ACCESS_KEY` |    ✅    | R2 secret access key.                                                                            |
+| `R2_ACCOUNT_ID`        |   ✅\*   | Cloudflare account id (endpoint derived as `https://<id>.r2.cloudflarestorage.com`).             |
+| `R2_ENDPOINT`          |   ✅\*   | Full S3 endpoint — alternative to `R2_ACCOUNT_ID`.                                               |
+| `R2_PUBLIC_BASE_URL`   |    ✅    | Public bucket/custom-domain URL, e.g. `https://images.example.com` or `https://pub-xxxx.r2.dev`. |
+| `R2_KEY_PREFIX`        |          | Optional object key prefix (folder).                                                             |
 
 > \* Provide either `R2_ACCOUNT_ID` **or** `R2_ENDPOINT`.
+
+#### Getting the R2 credentials
+
+1. **S3 API keys.** In the Cloudflare dashboard go to **R2 → API → Manage API
+   Tokens → Create API Token** (an _R2_ token, not a general account token) with
+   _Object Read & Write_. You get an **Access Key ID** → `R2_ACCESS_KEY_ID` and a
+   **Secret Access Key** → `R2_SECRET_ACCESS_KEY`.
+
+   > Cloudflare's newer flow may only show a single **API token value**
+   > (`cfat_…`). In that case derive the S3 keys: `R2_ACCESS_KEY_ID` is the
+   > token's **ID**, and `R2_SECRET_ACCESS_KEY` is the **SHA‑256 hash of the
+   > token value** (`printf '%s' '<token>' | sha256sum`).
+
+2. **Public URL.** Buckets are private by default. Enable public access under
+   **R2 → your bucket → Settings → Public access**: either turn on the
+   **r2.dev subdomain** (`https://pub-xxxx.r2.dev`, fine for testing) or connect
+   a **custom domain** (recommended for production). Use that as
+   `R2_PUBLIC_BASE_URL`. The `…r2.cloudflarestorage.com` S3 endpoint is **not** a
+   public URL and must not be used here.
 
 ---
 
@@ -187,11 +218,11 @@ Claude  ──POST /mcp──▶  image-gen-mcp  ──▶  OpenRouter chat/comp
                               └─ returns inline image + public link
 ```
 
-| Method | Path | Purpose |
-|--------|------|---------|
-| `POST` | `/mcp` | Streamable-HTTP MCP endpoint (the connector URL). |
-| `GET` | `/images/<file>` | Public, persisted images (local storage only). |
-| `GET` | `/health` | Health check (reports model + active storage backend). |
+| Method | Path             | Purpose                                                |
+| ------ | ---------------- | ------------------------------------------------------ |
+| `POST` | `/mcp`           | Streamable-HTTP MCP endpoint (the connector URL).      |
+| `GET`  | `/images/<file>` | Public, persisted images (local storage only).         |
+| `GET`  | `/health`        | Health check (reports model + active storage backend). |
 
 ## 🔒 Security
 
