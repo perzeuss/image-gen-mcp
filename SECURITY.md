@@ -26,3 +26,17 @@ server, so deploy it with care:
 Built-in protections include path-traversal-safe image serving, Helmet
 security headers, constant-time token comparison, OAuth 2.1 with PKCE, and
 bounded request inputs. See the README's Security section for details.
+
+## Verifying release artifacts
+
+Released container images carry an SBOM and SLSA provenance and are signed with
+[cosign](https://github.com/sigstore/cosign) (keyless). Verify before deploying:
+
+```bash
+cosign verify ghcr.io/perzeuss/image-gen-mcp:latest \
+  --certificate-identity-regexp 'https://github.com/perzeuss/image-gen-mcp/.+' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+
+Automated scanning in CI: CodeQL (code), Dependency Review (PRs), Trivy
+(images) and OpenSSF Scorecard.

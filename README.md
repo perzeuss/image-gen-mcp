@@ -14,6 +14,7 @@ Powered by [OpenRouter](https://openrouter.ai) — use **NanoBanana / Gemini Fla
 [![CI](https://github.com/perzeuss/image-gen-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/perzeuss/image-gen-mcp/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/perzeuss/image-gen-mcp?sort=semver)](https://github.com/perzeuss/image-gen-mcp/releases)
 [![GHCR](https://img.shields.io/badge/ghcr.io-image--gen--mcp-2496ED?logo=docker&logoColor=white)](https://github.com/perzeuss/image-gen-mcp/pkgs/container/image-gen-mcp)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/perzeuss/image-gen-mcp/badge)](https://securityscorecards.dev/viewer/?uri=github.com/perzeuss/image-gen-mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
 ![Node](https://img.shields.io/badge/node-22%20%7C%2024%20LTS-339933?logo=node.js&logoColor=white)
 ![MCP](https://img.shields.io/badge/MCP-remote%20connector-6E56CF)
@@ -259,6 +260,17 @@ Claude  ──POST /mcp──▶  image-gen-mcp  ──▶  OpenRouter chat/comp
   limit; `reference_image` is restricted to `http(s)` and `data:` image URLs.
 - **Runs as a non-root user** in the container, behind `tini` for clean
   shutdowns, with graceful `SIGTERM`/`SIGINT` handling.
+- **Supply chain** — released images ship an **SBOM** + **SLSA provenance** and
+  are **signed with cosign** (keyless). CodeQL, Dependency Review, Trivy image
+  scanning and OpenSSF Scorecard run in CI.
+
+Verify an image signature:
+
+```bash
+cosign verify ghcr.io/perzeuss/image-gen-mcp:latest \
+  --certificate-identity-regexp 'https://github.com/perzeuss/image-gen-mcp/.+' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
 
 > **Claude connector vs. static token:** Claude's connector flow uses OAuth, so
 > set `OAUTH_PASSWORD` for it (don't rely on `MCP_AUTH_TOKEN`, which Claude can't
