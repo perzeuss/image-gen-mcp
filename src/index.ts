@@ -10,6 +10,8 @@
  */
 
 import express, { type Request, type Response } from "express";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 
 import { loadConfig } from "./config.js";
@@ -17,6 +19,7 @@ import { OpenRouterClient } from "./openrouter.js";
 import { ImageStore } from "./storage.js";
 import { createStorage } from "./r2.js";
 import { buildMcpServer } from "./mcp.js";
+import { isOriginAllowed, safeStrEqual } from "./security.js";
 
 async function main() {
   const config = loadConfig();
@@ -25,28 +28,77 @@ async function main() {
   await store.init();
 
   const app = express();
-  app.use(express.json({ limit: "25mb" }));
+  // Don't advertise the framework.
+  app.disable("x-powered-by");
+  // Honour X-Forwarded-* from the reverse proxy (needed for correct client IPs
+  // in rate limiting and for building public links behind TLS termination).
+  app.set("trust proxy", config.trustProxy);
+
+  // Security headers. This is a JSON/image API (no HTML), so CSP is disabled,
+  // but images must remain embeddable cross-origin (Claude, docs, mockups).
+  app.use(
+    helmet({
+      contentSecurityPolicy: false,
+      crossOriginResourcePolicy: { policy: "cross-origin" },
+    }),
+  );
+
+  app.use(express.json({ limit: config.maxBodySize }));
+
+  // Per-IP rate limiting to contain abuse / runaway cost (0 = disabled).
+  if (config.rateLimitMax > 0) {
+    app.use(
+      rateLimit({
+        windowMs: config.rateLimitWindowMs,
+        max: config.rateLimitMax,
+        standardHeaders: true,
+        legacyHeaders: false,
+        // Don't rate-limit health checks from orchestrators / uptime monitors.
+        skip: (req) => req.path === "/health",
+        message: {
+          jsonrpc: "2.0",
+          error: { code: -32029, message: "Too many requests" },
+          id: null,
+        },
+      }),
+    );
+  }
 
   // Resolve the externally reachable origin for a request, honouring reverse
   // proxies (Traefik, nginx, ... set x-forwarded-* headers).
   const requestOrigin = (req: Request): string => {
-    const proto = (req.headers["x-forwarded-proto"] as string)?.split(",")[0] || req.protocol;
-    const host = (req.headers["x-forwarded-host"] as string)?.split(",")[0] || req.headers.host;
+    const proto =
+      (req.headers["x-forwarded-proto"] as string)?.split(",")[0] || req.protocol;
+    const host =
+      (req.headers["x-forwarded-host"] as string)?.split(",")[0] ||
+      req.headers.host;
     return host ? `${proto}://${host}` : "";
   };
 
-  // Optional bearer-token protection for the MCP endpoint.
-  const checkAuth = (req: Request, res: Response): boolean => {
-    if (!config.authToken) return true;
-    const header = req.headers.authorization || "";
-    const token = header.replace(/^Bearer\s+/i, "").trim();
-    if (token === config.authToken) return true;
-    res.status(401).json({
-      jsonrpc: "2.0",
-      error: { code: -32001, message: "Unauthorized" },
-      id: null,
-    });
-    return false;
+  // Optional bearer-token protection + Origin allow-list for the MCP endpoint.
+  const checkAccess = (req: Request, res: Response): boolean => {
+    const origin = req.headers.origin as string | undefined;
+    if (!isOriginAllowed(origin, config.allowedOrigins ?? [])) {
+      res.status(403).json({
+        jsonrpc: "2.0",
+        error: { code: -32003, message: "Forbidden origin" },
+        id: null,
+      });
+      return false;
+    }
+    if (config.authToken) {
+      const header = req.headers.authorization || "";
+      const token = header.replace(/^Bearer\s+/i, "").trim();
+      if (!token || !safeStrEqual(token, config.authToken)) {
+        res.status(401).json({
+          jsonrpc: "2.0",
+          error: { code: -32001, message: "Unauthorized" },
+          id: null,
+        });
+        return false;
+      }
+    }
+    return true;
   };
 
   app.get("/health", (_req, res) => {
@@ -82,7 +134,7 @@ async function main() {
 
   // Stateless Streamable HTTP MCP endpoint.
   app.post("/mcp", async (req: Request, res: Response) => {
-    if (!checkAuth(req, res)) return;
+    if (!checkAccess(req, res)) return;
     try {
       const server = buildMcpServer({
         config,
@@ -122,7 +174,7 @@ async function main() {
   app.get("/mcp", methodNotAllowed);
   app.delete("/mcp", methodNotAllowed);
 
-  app.listen(config.port, config.host, () => {
+  const server = app.listen(config.port, config.host, () => {
     console.log(
       `image-gen-mcp listening on http://${config.host}:${config.port}`,
     );
@@ -142,10 +194,22 @@ async function main() {
         );
       }
     }
-    if (config.authToken) {
-      console.log("  Auth:           bearer token required");
-    }
+    console.log(
+      `  Auth:           ${config.authToken ? "bearer token required" : "open (no token)"}`,
+    );
+    console.log(
+      `  Rate limit:     ${config.rateLimitMax > 0 ? `${config.rateLimitMax}/${config.rateLimitWindowMs}ms per IP` : "disabled"}`,
+    );
   });
+
+  // Graceful shutdown so in-flight requests can finish on redeploys.
+  const shutdown = (signal: string) => {
+    console.log(`Received ${signal}, shutting down...`);
+    server.close(() => process.exit(0));
+    setTimeout(() => process.exit(0), 10_000).unref();
+  };
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGINT", () => shutdown("SIGINT"));
 }
 
 main().catch((err) => {

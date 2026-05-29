@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { modalitiesForModelType, parseDataUrl } from "../src/openrouter.js";
+import {
+  isAllowedImageRef,
+  modalitiesForModelType,
+  parseDataUrl,
+} from "../src/openrouter.js";
 
 describe("modalitiesForModelType", () => {
   it("returns image-only for pure image models", () => {
@@ -44,5 +48,21 @@ describe("parseDataUrl", () => {
   it("returns null for non data URLs", () => {
     assert.equal(parseDataUrl("https://example.com/x.png"), null);
     assert.equal(parseDataUrl("not a url"), null);
+  });
+});
+
+describe("isAllowedImageRef", () => {
+  it("allows http(s) URLs and data image URLs", () => {
+    assert.equal(isAllowedImageRef("https://example.com/a.png"), true);
+    assert.equal(isAllowedImageRef("http://example.com/a.png"), true);
+    assert.equal(isAllowedImageRef("data:image/png;base64,AAAA"), true);
+  });
+
+  it("rejects other schemes and non-image data URLs", () => {
+    assert.equal(isAllowedImageRef("file:///etc/passwd"), false);
+    assert.equal(isAllowedImageRef("ftp://example.com/a.png"), false);
+    assert.equal(isAllowedImageRef("gopher://example.com"), false);
+    assert.equal(isAllowedImageRef("data:text/html,<script>"), false);
+    assert.equal(isAllowedImageRef("not a url"), false);
   });
 });

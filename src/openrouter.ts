@@ -63,6 +63,21 @@ interface OpenRouterResponse {
   }>;
 }
 
+/**
+ * Only allow http(s) URLs and data: image URLs as reference images. Rejects
+ * schemes like file:, ftp: or gopher: that could be abused as request vectors.
+ */
+export function isAllowedImageRef(ref: string): boolean {
+  const value = ref.trim();
+  if (/^data:image\//i.test(value)) return true;
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 /** Parse a data URL ("data:image/png;base64,....") into payload + mime type. */
 export function parseDataUrl(url: string): GeneratedImage | null {
   const match = /^data:([^;,]+)?(;base64)?,(.*)$/s.exec(url);
@@ -84,6 +99,12 @@ export class OpenRouterClient {
     const prompt = opts.prompt?.trim();
     if (!prompt) {
       throw new Error("Prompt must not be empty.");
+    }
+
+    if (opts.referenceImage && !isAllowedImageRef(opts.referenceImage)) {
+      throw new Error(
+        "reference_image must be an http(s) URL or a data: image URL.",
+      );
     }
 
     const content: OpenRouterContent = opts.referenceImage

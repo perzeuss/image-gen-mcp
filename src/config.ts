@@ -4,6 +4,8 @@
  * without code changes.
  */
 
+import { parseBool, parseList } from "./security.js";
+
 export type ModelType = "chat" | "image";
 
 /** Cloudflare R2 storage configuration (S3-compatible). */
@@ -56,6 +58,18 @@ export interface Config {
    * local disk). Configured via the R2_* environment variables.
    */
   r2?: R2Config;
+
+  // --- Security / hardening ---
+  /** Trust X-Forwarded-* headers (true when running behind a reverse proxy). */
+  trustProxy: boolean;
+  /** Max accepted JSON request body size (Express byte-size string). */
+  maxBodySize: string;
+  /** Rate-limit window in milliseconds. */
+  rateLimitWindowMs: number;
+  /** Max requests per window per client IP (0 disables rate limiting). */
+  rateLimitMax: number;
+  /** Optional allow-list of request Origin headers for the MCP endpoint. */
+  allowedOrigins?: string[];
 }
 
 /** Model id fragments that identify pure image-generation models. */
@@ -171,5 +185,16 @@ export function loadConfig(): Config {
       10,
     ),
     r2: readR2Config(),
+    trustProxy: parseBool(process.env.TRUST_PROXY, true),
+    maxBodySize: (process.env.MAX_BODY_SIZE || "25mb").trim(),
+    rateLimitWindowMs: Number.parseInt(
+      process.env.RATE_LIMIT_WINDOW_MS || "60000",
+      10,
+    ),
+    rateLimitMax: Number.parseInt(process.env.RATE_LIMIT_MAX || "60", 10),
+    allowedOrigins: (() => {
+      const list = parseList(process.env.ALLOWED_ORIGINS);
+      return list.length > 0 ? list : undefined;
+    })(),
   };
 }

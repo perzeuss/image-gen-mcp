@@ -12,7 +12,7 @@ Powered by [OpenRouter](https://openrouter.ai) — use **NanoBanana / Gemini Fla
 **Flux**, **GPT Image**, **Seedream** and more, all behind one connector.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
-![Node](https://img.shields.io/badge/node-%E2%89%A520-339933?logo=node.js&logoColor=white)
+![Node](https://img.shields.io/badge/node-22%20%7C%2024%20LTS-339933?logo=node.js&logoColor=white)
 ![MCP](https://img.shields.io/badge/MCP-remote%20connector-6E56CF)
 
 </div>
@@ -127,6 +127,11 @@ All configuration is via environment variables.
 | `DEFAULT_ASPECT_RATIO` | | _(none)_ | Default aspect ratio when a request omits one. |
 | `DEFAULT_IMAGE_SIZE` | | _(none)_ | Default image size (`1K`/`2K`/`4K`). |
 | `REQUEST_TIMEOUT_MS` | | `120000` | OpenRouter request timeout. |
+| `TRUST_PROXY` | | `true` | Trust `X-Forwarded-*` headers (keep on behind a proxy). |
+| `MAX_BODY_SIZE` | | `25mb` | Max accepted request body size. |
+| `RATE_LIMIT_MAX` | | `60` | Per-IP requests per window (`0` disables). |
+| `RATE_LIMIT_WINDOW_MS` | | `60000` | Rate-limit window in ms. |
+| `ALLOWED_ORIGINS` | | _(all)_ | Comma-separated `Origin` allow-list for `/mcp`. |
 
 ### Cloudflare R2 storage (optional, preferred when configured)
 
@@ -167,11 +172,25 @@ Claude  ──POST /mcp──▶  image-gen-mcp  ──▶  OpenRouter chat/comp
 
 ## 🔒 Security
 
-- The image-serving route validates filenames against a strict allow-list and a
-  containment check — `..` segments, encoded separators, absolute paths and null
-  bytes can never escape the storage directory.
-- Set `MCP_AUTH_TOKEN` for any public deployment: the server holds your
-  OpenRouter key, so the `/mcp` endpoint should not be open to the world.
+- **Path-traversal safe image serving** — filenames are validated against a
+  strict allow-list plus a containment check, so `..` segments, encoded
+  separators, absolute paths and null bytes can never escape the storage dir.
+- **Security headers** via [Helmet](https://helmetjs.github.io/) and no
+  `X-Powered-By` leak.
+- **Rate limiting** per client IP to contain abuse and runaway cost
+  (`RATE_LIMIT_MAX` / `RATE_LIMIT_WINDOW_MS`), with `/health` exempt.
+- **Constant-time bearer-token check** (`MCP_AUTH_TOKEN`) to avoid timing
+  attacks, plus an optional `Origin` allow-list (`ALLOWED_ORIGINS`).
+- **Input validation** — bounded prompt/seed/aspect-ratio inputs and a body-size
+  limit; `reference_image` is restricted to `http(s)` and `data:` image URLs.
+- **Runs as a non-root user** in the container, behind `tini` for clean
+  shutdowns, with graceful `SIGTERM`/`SIGINT` handling.
+
+> **Note on the Claude connector:** Claude's custom-connector flow authenticates
+> via OAuth and cannot send a static bearer token. For the Claude connector,
+> leave `MCP_AUTH_TOKEN` empty and protect the endpoint at the network layer
+> (e.g. Cloudflare Access, or a WAF rule allowing only Anthropic's IP ranges).
+> `MCP_AUTH_TOKEN` is still useful for locking down direct/`curl` access.
 
 ## 🧪 Development
 

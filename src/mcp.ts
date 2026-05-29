@@ -42,26 +42,33 @@ export function buildMcpServer(ctx: ServerContext): McpServer {
         prompt: z
           .string()
           .min(1)
+          .max(8000)
           .describe("Text description of the image to generate."),
         aspect_ratio: z
           .string()
+          .regex(/^\d{1,2}:\d{1,2}$/)
           .optional()
           .describe('Aspect ratio such as "1:1", "16:9", "9:16", "4:3", "3:2".'),
         image_size: z
           .string()
+          .max(8)
           .optional()
           .describe('Output resolution such as "1K", "2K", "4K" (model dependent).'),
         negative_prompt: z
           .string()
+          .max(4000)
           .optional()
           .describe("Things to avoid in the image (ignored when a reference image is given)."),
         seed: z
           .number()
           .int()
+          .min(0)
+          .max(4294967295)
           .optional()
           .describe("Seed for reproducible results (model dependent)."),
         reference_image: z
           .string()
+          .max(15_000_000)
           .optional()
           .describe(
             "Optional reference image for image-to-image, as an http(s) URL or a data URL " +
