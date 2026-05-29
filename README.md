@@ -73,7 +73,7 @@ Deploy the server to a managed host in a couple of clicks:
 
 [![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/new?referralCode=3vmRew)
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/perzeuss/image-gen-mcp)
-[![Deploy to DigitalOcean](https://www.deploytodo.com/do-btn-blue.svg)](https://cloud.digitalocean.com/apps/new?repo=https://github.com/perzeuss/image-gen-mcp/tree/main)
+[![Deploy to DigitalOcean](https://www.deploytodo.com/do-btn-blue.svg)](https://cloud.digitalocean.com/apps/new?repo=https://github.com/perzeuss/image-gen-mcp/tree/main&refcode=d70dfee04695)
 
 After the first deploy, set at least `OPENROUTER_API_KEY` (and ideally
 `MCP_AUTH_TOKEN`) in the provider's environment settings, then point your Claude
