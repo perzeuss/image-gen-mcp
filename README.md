@@ -13,6 +13,7 @@ Powered by [OpenRouter](https://openrouter.ai) — use **NanoBanana / Gemini Fla
 
 [![CI](https://github.com/perzeuss/image-gen-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/perzeuss/image-gen-mcp/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/perzeuss/image-gen-mcp?sort=semver)](https://github.com/perzeuss/image-gen-mcp/releases)
+[![GHCR](https://img.shields.io/badge/ghcr.io-image--gen--mcp-2496ED?logo=docker&logoColor=white)](https://github.com/perzeuss/image-gen-mcp/pkgs/container/image-gen-mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
 ![Node](https://img.shields.io/badge/node-22%20%7C%2024%20LTS-339933?logo=node.js&logoColor=white)
 ![MCP](https://img.shields.io/badge/MCP-remote%20connector-6E56CF)
@@ -68,6 +69,22 @@ Health check:
 curl http://localhost:3000/health
 # {"status":"ok","model":"google/gemini-2.5-flash-image","modelType":"chat","storage":"local"}
 ```
+
+### Use the prebuilt image (GHCR)
+
+Released versions are published as multi-arch (amd64/arm64) container images to
+the GitHub Container Registry:
+
+```bash
+docker run -p 3000:3000 \
+  -e OPENROUTER_API_KEY=sk-or-v1-... \
+  -e IMAGE_MODEL=google/gemini-2.5-flash-image \
+  ghcr.io/perzeuss/image-gen-mcp:latest
+```
+
+Pin a specific version with `:1.0.0` (or `:1`, `:1.0`). To use it in
+`docker-compose.yml`, replace the `build:` block with
+`image: ghcr.io/perzeuss/image-gen-mcp:latest`.
 
 ## ☁️ One-click deploy
 
