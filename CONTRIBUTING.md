@@ -13,13 +13,14 @@ npm run dev            # tsc --watch
 
 Useful scripts:
 
-| Script                                    | Purpose                                |
-| ----------------------------------------- | -------------------------------------- |
-| `npm run build`                           | Compile TypeScript to `dist/`.         |
-| `npm test`                                | Run the unit tests (Node test runner). |
-| `npm run typecheck`                       | Type-only check.                       |
-| `npm run lint`                            | ESLint.                                |
-| `npm run format` / `npm run format:check` | Prettier write / check.                |
+| Script                                    | Purpose                           |
+| ----------------------------------------- | --------------------------------- |
+| `npm run build`                           | Compile TypeScript to `dist/`.    |
+| `npm test`                                | Run the unit + integration tests. |
+| `npm run test:coverage`                   | Run tests with coverage.          |
+| `npm run typecheck`                       | Type-only check.                  |
+| `npm run lint`                            | ESLint.                           |
+| `npm run format` / `npm run format:check` | Prettier write / check.           |
 
 Please make sure `npm run format:check`, `npm run lint`, `npm run typecheck`,
 `npm run build` and `npm test` all pass before opening a PR (CI runs the same).
