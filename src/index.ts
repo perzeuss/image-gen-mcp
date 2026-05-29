@@ -74,6 +74,24 @@ async function main() {
     );
   }
 
+  // Log OAuth-related requests so connector setup issues are diagnosable.
+  // Registered before the auth router so it observes those requests.
+  app.use((req, res, next) => {
+    const path = req.path; // capture now; nested routers rewrite req.url later
+    if (
+      path === "/register" ||
+      path === "/authorize" ||
+      path === "/token" ||
+      path.startsWith("/.well-known/")
+    ) {
+      const method = req.method;
+      res.on("finish", () =>
+        console.log(`[oauth] ${method} ${path} -> ${res.statusCode}`),
+      );
+    }
+    next();
+  });
+
   // Resolve the externally reachable origin for a request, honouring reverse
   // proxies (Traefik, nginx, ... set x-forwarded-* headers).
   const requestOrigin = (req: Request): string => {
@@ -122,6 +140,14 @@ async function main() {
   if (config.oauth) {
     const provider = new StatelessOAuthProvider(config.oauth);
     const issuerUrl = new URL(config.oauth.issuerUrl);
+    const isLocal =
+      issuerUrl.hostname === "localhost" || issuerUrl.hostname === "127.0.0.1";
+    if (issuerUrl.protocol !== "https:" && !isLocal) {
+      throw new Error(
+        `OAuth issuer URL must be https (got "${config.oauth.issuerUrl}"). ` +
+          "Set OAUTH_ISSUER_URL / PUBLIC_BASE_URL to your public https URL.",
+      );
+    }
     const resourceServerUrl = new URL("/mcp", issuerUrl);
     // Mount discovery, dynamic client registration, /authorize and /token.
     // resourceServerUrl makes the protected-resource metadata served at
@@ -154,6 +180,8 @@ async function main() {
       model: config.imageModel,
       modelType: config.modelType,
       storage: store.kind,
+      auth: authMode,
+      oauthIssuer: config.oauth?.issuerUrl,
     });
   });
 

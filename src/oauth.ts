@@ -92,18 +92,18 @@ export class StatelessOAuthProvider implements OAuthServerProvider {
       getClient: (clientId: string) => {
         const claims = verifyToken(clientId, secret);
         if (!claims || claims.t !== "client") return undefined;
-        return claims.c as OAuthClientInformationFull;
+        // Reattach the (self-describing) id to the decoded metadata.
+        return { ...(claims.c as object), client_id: clientId } as OAuthClientInformationFull;
       },
       registerClient: (client) => {
-        // Encode the full client info into a signed, self-describing client_id.
-        const full = { ...client } as OAuthClientInformationFull;
-        const clientId = signToken({ t: "client", c: full }, secret);
-        full.client_id = clientId;
-        full.client_id_issued_at = Math.floor(Date.now() / 1000);
-        // Re-sign so the embedded copy carries the final id/timestamp too.
-        const finalId = signToken({ t: "client", c: full }, secret);
-        full.client_id = finalId;
-        return full;
+        // Encode the client metadata into a signed, self-describing client_id
+        // so no server-side storage is needed and it survives restarts.
+        const meta = {
+          ...client,
+          client_id_issued_at: Math.floor(Date.now() / 1000),
+        };
+        const clientId = signToken({ t: "client", c: meta }, secret);
+        return { ...meta, client_id: clientId } as OAuthClientInformationFull;
       },
     };
   }
