@@ -7,7 +7,10 @@ import { afterEach, beforeEach, describe, it } from "node:test";
 import type { Config } from "../src/config.js";
 import { ImageStore, isSafeFilename } from "../src/storage.js";
 
-function makeConfig(storageDir: string, overrides: Partial<Config> = {}): Config {
+function makeConfig(
+  storageDir: string,
+  overrides: Partial<Config> = {},
+): Config {
   return {
     openRouterApiKey: "sk-test",
     imageModel: "google/gemini-2.5-flash-image",
@@ -39,7 +42,11 @@ describe("isSafeFilename", () => {
       "",
       ".env",
     ]) {
-      assert.equal(isSafeFilename(bad), false, `expected ${JSON.stringify(bad)} to be rejected`);
+      assert.equal(
+        isSafeFilename(bad),
+        false,
+        `expected ${JSON.stringify(bad)} to be rejected`,
+      );
     }
   });
 
@@ -62,7 +69,10 @@ describe("ImageStore", () => {
   it("saves an image with the correct extension and round-trips the bytes", async () => {
     const store = new ImageStore(makeConfig(dir));
     await store.init();
-    const stored = await store.save({ base64: Buffer.from("PNG").toString("base64"), mimeType: "image/png" });
+    const stored = await store.save({
+      base64: Buffer.from("PNG").toString("base64"),
+      mimeType: "image/png",
+    });
     assert.match(stored.filename, /\.png$/);
     assert.equal(stored.urlPath, `/images/${stored.filename}`);
     const bytes = await readFile(stored.absolutePath);
@@ -72,22 +82,44 @@ describe("ImageStore", () => {
   it("maps mime types to extensions and falls back to png", async () => {
     const store = new ImageStore(makeConfig(dir));
     await store.init();
-    assert.match((await store.save({ base64: "AA==", mimeType: "image/jpeg" })).filename, /\.jpg$/);
-    assert.match((await store.save({ base64: "AA==", mimeType: "image/webp" })).filename, /\.webp$/);
-    assert.match((await store.save({ base64: "AA==", mimeType: "image/unknown" })).filename, /\.png$/);
+    assert.match(
+      (await store.save({ base64: "AA==", mimeType: "image/jpeg" })).filename,
+      /\.jpg$/,
+    );
+    assert.match(
+      (await store.save({ base64: "AA==", mimeType: "image/webp" })).filename,
+      /\.webp$/,
+    );
+    assert.match(
+      (await store.save({ base64: "AA==", mimeType: "image/unknown" }))
+        .filename,
+      /\.png$/,
+    );
   });
 
   describe("publicUrl", () => {
-    const stored = { filename: "x.png", absolutePath: "/tmp/x.png", urlPath: "/images/x.png" };
+    const stored = {
+      filename: "x.png",
+      absolutePath: "/tmp/x.png",
+      urlPath: "/images/x.png",
+    };
 
     it("prefers the configured public base URL", () => {
-      const store = new ImageStore(makeConfig(dir, { publicBaseUrl: "https://img.example.com" }));
-      assert.equal(store.publicUrl(stored, "http://localhost:3000"), "https://img.example.com/images/x.png");
+      const store = new ImageStore(
+        makeConfig(dir, { publicBaseUrl: "https://img.example.com" }),
+      );
+      assert.equal(
+        store.publicUrl(stored, "http://localhost:3000"),
+        "https://img.example.com/images/x.png",
+      );
     });
 
     it("falls back to the request origin", () => {
       const store = new ImageStore(makeConfig(dir));
-      assert.equal(store.publicUrl(stored, "http://localhost:3000"), "http://localhost:3000/images/x.png");
+      assert.equal(
+        store.publicUrl(stored, "http://localhost:3000"),
+        "http://localhost:3000/images/x.png",
+      );
     });
 
     it("falls back to the bare path when nothing is known", () => {
@@ -100,7 +132,10 @@ describe("ImageStore", () => {
     it("resolves a valid filename inside the storage dir", () => {
       const store = new ImageStore(makeConfig(dir));
       const resolved = store.resolveSafe("1700000000000-abcd1234.png");
-      assert.equal(resolved, path.join(path.resolve(dir), "1700000000000-abcd1234.png"));
+      assert.equal(
+        resolved,
+        path.join(path.resolve(dir), "1700000000000-abcd1234.png"),
+      );
     });
 
     it("rejects traversal attempts", () => {

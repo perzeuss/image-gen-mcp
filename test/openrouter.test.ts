@@ -42,7 +42,10 @@ describe("parseDataUrl", () => {
   it("encodes a non-base64 data URL payload", () => {
     const parsed = parseDataUrl("data:text/plain,hello%20world");
     assert.ok(parsed);
-    assert.equal(Buffer.from(parsed.base64, "base64").toString(), "hello world");
+    assert.equal(
+      Buffer.from(parsed.base64, "base64").toString(),
+      "hello world",
+    );
   });
 
   it("returns null for non data URLs", () => {

@@ -33,9 +33,14 @@ export class R2ImageStore implements ImageStorage {
     // Nothing to provision; the bucket is expected to exist.
   }
 
-  async store(image: GeneratedImage, _requestOrigin?: string): Promise<SaveResult> {
+  async store(
+    image: GeneratedImage,
+    _requestOrigin?: string,
+  ): Promise<SaveResult> {
     const filename = generateFilename(image.mimeType);
-    const key = this.r2.keyPrefix ? `${this.r2.keyPrefix}/${filename}` : filename;
+    const key = this.r2.keyPrefix
+      ? `${this.r2.keyPrefix}/${filename}`
+      : filename;
     const objectUrl = `${this.r2.endpoint}/${encodeURIComponent(this.r2.bucket)}/${encodeURI(key)}`;
 
     const response = await this.client.fetch(objectUrl, {

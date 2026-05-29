@@ -32,7 +32,12 @@ import {
 } from "@modelcontextprotocol/sdk/server/auth/errors.js";
 
 import type { OAuthConfig } from "./config.js";
-import { escapeHtml, safeStrEqual, signToken, verifyToken } from "./security.js";
+import {
+  escapeHtml,
+  safeStrEqual,
+  signToken,
+  verifyToken,
+} from "./security.js";
 
 type Claims = Record<string, unknown>;
 
@@ -93,7 +98,10 @@ export class StatelessOAuthProvider implements OAuthServerProvider {
         const claims = verifyToken(clientId, secret);
         if (!claims || claims.t !== "client") return undefined;
         // Reattach the (self-describing) id to the decoded metadata.
-        return { ...(claims.c as object), client_id: clientId } as OAuthClientInformationFull;
+        return {
+          ...(claims.c as object),
+          client_id: clientId,
+        } as OAuthClientInformationFull;
       },
       registerClient: (client) => {
         // Encode the client metadata into a signed, self-describing client_id
@@ -221,16 +229,15 @@ export class StatelessOAuthProvider implements OAuthServerProvider {
     };
   }
 
-  private decodeCode(
-    client: OAuthClientInformationFull,
-    code: string,
-  ): Claims {
+  private decodeCode(client: OAuthClientInformationFull, code: string): Claims {
     const claims = verifyToken(code, this.cfg.signingSecret);
     if (!claims || claims.t !== "code") {
       throw new InvalidGrantError("Invalid or expired authorization code");
     }
     if (claims.cid !== client.client_id) {
-      throw new InvalidGrantError("Authorization code was issued to another client");
+      throw new InvalidGrantError(
+        "Authorization code was issued to another client",
+      );
     }
     return claims;
   }

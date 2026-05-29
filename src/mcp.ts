@@ -48,17 +48,23 @@ export function buildMcpServer(ctx: ServerContext): McpServer {
           .string()
           .regex(/^\d{1,2}:\d{1,2}$/)
           .optional()
-          .describe('Aspect ratio such as "1:1", "16:9", "9:16", "4:3", "3:2".'),
+          .describe(
+            'Aspect ratio such as "1:1", "16:9", "9:16", "4:3", "3:2".',
+          ),
         image_size: z
           .string()
           .max(8)
           .optional()
-          .describe('Output resolution such as "1K", "2K", "4K" (model dependent).'),
+          .describe(
+            'Output resolution such as "1K", "2K", "4K" (model dependent).',
+          ),
         negative_prompt: z
           .string()
           .max(4000)
           .optional()
-          .describe("Things to avoid in the image (ignored when a reference image is given)."),
+          .describe(
+            "Things to avoid in the image (ignored when a reference image is given).",
+          ),
         seed: z
           .number()
           .int()
@@ -118,7 +124,9 @@ export function buildMcpServer(ctx: ServerContext): McpServer {
         const message = err instanceof Error ? err.message : String(err);
         return {
           isError: true,
-          content: [{ type: "text", text: `Image generation failed: ${message}` }],
+          content: [
+            { type: "text", text: `Image generation failed: ${message}` },
+          ],
         };
       }
     },

@@ -3,6 +3,26 @@
   "version": "1.0.0",
   "description": "Remote MCP server for OpenRouter image generation, usable as a Claude custom connector. Generates images, stores them on the server and returns a public link.",
   "license": "MIT",
+  "author": "Pascal Malbranche",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/perzeuss/image-gen-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/perzeuss/image-gen-mcp/issues"
+  },
+  "homepage": "https://github.com/perzeuss/image-gen-mcp#readme",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "claude",
+    "connector",
+    "openrouter",
+    "image-generation",
+    "flux",
+    "gemini",
+    "nano-banana"
+  ],
   "type": "module",
   "bin": {
     "image-gen-mcp": "dist/index.js"
@@ -12,7 +32,10 @@
     "start": "node dist/index.js",
     "dev": "tsc --watch",
     "test": "node --import tsx --test test/**/*.test.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "engines": {
     "node": ">=22"
@@ -26,9 +49,14 @@
     "zod": "^3.25.0"
   },
   "devDependencies": {
+    "@eslint/js": "^9.17.0",
     "@types/express": "^5.0.0",
     "@types/node": "^22.0.0",
+    "eslint": "^9.17.0",
+    "globals": "^15.14.0",
+    "prettier": "^3.4.0",
     "tsx": "^4.19.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "typescript-eslint": "^8.18.0"
   }
 }

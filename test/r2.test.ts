@@ -77,7 +77,10 @@ describe("readR2Config", () => {
 
 describe("createStorage", () => {
   it("uses the local backend when R2 is not configured", () => {
-    const store = createStorage(baseConfig(), () => new ImageStore(baseConfig()));
+    const store = createStorage(
+      baseConfig(),
+      () => new ImageStore(baseConfig()),
+    );
     assert.equal(store.kind, "local");
     assert.ok(store instanceof ImageStore);
   });

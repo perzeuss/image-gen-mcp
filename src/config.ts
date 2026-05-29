@@ -144,16 +144,25 @@ export function readR2Config(): R2Config | undefined {
   const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY?.trim();
   const accountId = process.env.R2_ACCOUNT_ID?.trim();
   const endpoint = process.env.R2_ENDPOINT?.trim();
-  const publicBaseUrl = process.env.R2_PUBLIC_BASE_URL?.trim().replace(/\/+$/, "");
+  const publicBaseUrl = process.env.R2_PUBLIC_BASE_URL?.trim().replace(
+    /\/+$/,
+    "",
+  );
   const keyPrefix = process.env.R2_KEY_PREFIX?.trim().replace(/^\/+|\/+$/g, "");
 
   const anySet = Boolean(
-    bucket || accessKeyId || secretAccessKey || accountId || endpoint || publicBaseUrl,
+    bucket ||
+    accessKeyId ||
+    secretAccessKey ||
+    accountId ||
+    endpoint ||
+    publicBaseUrl,
   );
   if (!anySet) return undefined;
 
   const resolvedEndpoint =
-    endpoint || (accountId ? `https://${accountId}.r2.cloudflarestorage.com` : "");
+    endpoint ||
+    (accountId ? `https://${accountId}.r2.cloudflarestorage.com` : "");
 
   const missing: string[] = [];
   if (!bucket) missing.push("R2_BUCKET");

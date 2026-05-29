@@ -92,7 +92,10 @@ export function parseList(value: string | undefined): string[] {
 }
 
 /** Parse a boolean-ish environment value, falling back to `fallback`. */
-export function parseBool(value: string | undefined, fallback: boolean): boolean {
+export function parseBool(
+  value: string | undefined,
+  fallback: boolean,
+): boolean {
   if (value === undefined || value.trim() === "") return fallback;
   return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
 }

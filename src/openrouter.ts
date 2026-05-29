@@ -51,7 +51,9 @@ interface OpenRouterImagePart {
   image_url: { url: string };
 }
 
-type OpenRouterContent = string | (OpenRouterMessageContentText | OpenRouterImagePart)[];
+type OpenRouterContent =
+  | string
+  | (OpenRouterMessageContentText | OpenRouterImagePart)[];
 
 interface OpenRouterResponse {
   error?: { message?: string; code?: number | string };
@@ -89,7 +91,10 @@ export function parseDataUrl(url: string): GeneratedImage | null {
     return { base64: data, mimeType };
   }
   // Non-base64 data URL (rare for images) -> encode it.
-  return { base64: Buffer.from(decodeURIComponent(data)).toString("base64"), mimeType };
+  return {
+    base64: Buffer.from(decodeURIComponent(data)).toString("base64"),
+    mimeType,
+  };
 }
 
 export class OpenRouterClient {

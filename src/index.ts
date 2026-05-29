@@ -96,7 +96,8 @@ async function main() {
   // proxies (Traefik, nginx, ... set x-forwarded-* headers).
   const requestOrigin = (req: Request): string => {
     const proto =
-      (req.headers["x-forwarded-proto"] as string)?.split(",")[0] || req.protocol;
+      (req.headers["x-forwarded-proto"] as string)?.split(",")[0] ||
+      req.protocol;
     const host =
       (req.headers["x-forwarded-host"] as string)?.split(",")[0] ||
       req.headers.host;

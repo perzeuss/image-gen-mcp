@@ -69,7 +69,10 @@ export class ImageStore implements ImageStorage {
     await mkdir(this.config.storageDir, { recursive: true });
   }
 
-  async store(image: GeneratedImage, requestOrigin?: string): Promise<SaveResult> {
+  async store(
+    image: GeneratedImage,
+    requestOrigin?: string,
+  ): Promise<SaveResult> {
     const stored = await this.save(image);
     return { publicUrl: this.publicUrl(stored, requestOrigin) };
   }
