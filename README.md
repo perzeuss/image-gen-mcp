@@ -12,6 +12,7 @@ Powered by [OpenRouter](https://openrouter.ai) — use **NanoBanana / Gemini Fla
 **Flux**, **GPT Image**, **Seedream** and more, all behind one connector.
 
 [![CI](https://github.com/perzeuss/image-gen-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/perzeuss/image-gen-mcp/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/perzeuss/image-gen-mcp?sort=semver)](https://github.com/perzeuss/image-gen-mcp/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
 ![Node](https://img.shields.io/badge/node-22%20%7C%2024%20LTS-339933?logo=node.js&logoColor=white)
 ![MCP](https://img.shields.io/badge/MCP-remote%20connector-6E56CF)

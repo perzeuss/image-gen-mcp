@@ -1,0 +1,35 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+# Avoid overlapping releases.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write # create releases, tags and push the changelog commit
+  issues: write # comment on released issues
+  pull-requests: write # comment on released PRs
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      # Gate the release on a green build + tests.
+      - run: npm run build
+      - run: npm test
+      - run: npx semantic-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
