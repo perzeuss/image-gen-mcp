@@ -1,6 +1,8 @@
 /**
- * Persists generated images to disk and builds the public link under which
- * they can be retrieved (served by the same HTTP server via /images/...).
+ * Image storage abstraction. Two backends are available:
+ *   - LocalImageStore: persists to disk, served by this server at /images/<file>.
+ *   - R2ImageStore:    uploads to Cloudflare R2 (see ./r2.ts), preferred when
+ *                      the R2_* environment variables are configured.
  */
 
 import { randomUUID } from "node:crypto";
@@ -10,13 +12,32 @@ import path from "node:path";
 import type { Config } from "./config.js";
 import type { GeneratedImage } from "./openrouter.js";
 
-const MIME_EXTENSIONS: Record<string, string> = {
+export const MIME_EXTENSIONS: Record<string, string> = {
   "image/png": "png",
   "image/jpeg": "jpg",
   "image/jpg": "jpg",
   "image/webp": "webp",
   "image/gif": "gif",
 };
+
+/** Generate a unique, traversal-safe object name for a generated image. */
+export function generateFilename(mimeType: string): string {
+  const ext = MIME_EXTENSIONS[mimeType.toLowerCase()] ?? "png";
+  return `${Date.now()}-${randomUUID().slice(0, 8)}.${ext}`;
+}
+
+export interface SaveResult {
+  /** Absolute, shareable public URL for the stored image. */
+  publicUrl: string;
+}
+
+/** Common interface implemented by every storage backend. */
+export interface ImageStorage {
+  readonly kind: "local" | "r2";
+  init(): Promise<void>;
+  /** Persist one image and return its public link. */
+  store(image: GeneratedImage, requestOrigin?: string): Promise<SaveResult>;
+}
 
 export interface StoredImage {
   filename: string;
@@ -25,20 +46,55 @@ export interface StoredImage {
   urlPath: string;
 }
 
-export class ImageStore {
+/**
+ * Strict allow-list for filenames we are willing to serve. This matches the
+ * names produced by {@link generateFilename} and rejects anything containing
+ * path separators, "..", null bytes or other traversal attempts.
+ */
+const SAFE_FILENAME = /^[A-Za-z0-9_-]+\.(png|jpg|jpeg|webp|gif)$/;
+
+export function isSafeFilename(name: string): boolean {
+  if (!name || name.length > 255) return false;
+  if (name.includes("\0")) return false;
+  return SAFE_FILENAME.test(name);
+}
+
+/** Local-disk storage backend. Images are served by this server at /images. */
+export class ImageStore implements ImageStorage {
+  readonly kind = "local" as const;
+
   constructor(private readonly config: Config) {}
 
   async init(): Promise<void> {
     await mkdir(this.config.storageDir, { recursive: true });
   }
 
+  async store(image: GeneratedImage, requestOrigin?: string): Promise<SaveResult> {
+    const stored = await this.save(image);
+    return { publicUrl: this.publicUrl(stored, requestOrigin) };
+  }
+
   /** Write one generated image to disk and return its location. */
   async save(image: GeneratedImage): Promise<StoredImage> {
-    const ext = MIME_EXTENSIONS[image.mimeType.toLowerCase()] ?? "png";
-    const filename = `${Date.now()}-${randomUUID().slice(0, 8)}.${ext}`;
+    const filename = generateFilename(image.mimeType);
     const absolutePath = path.join(this.config.storageDir, filename);
     await writeFile(absolutePath, Buffer.from(image.base64, "base64"));
     return { filename, absolutePath, urlPath: `/images/${filename}` };
+  }
+
+  /**
+   * Resolve a client-requested filename to an absolute path, but only if it is
+   * a safe filename that stays strictly inside the storage directory. Returns
+   * null for any traversal attempt or unexpected name.
+   */
+  resolveSafe(requested: string): string | null {
+    if (!isSafeFilename(requested)) return null;
+    const root = path.resolve(this.config.storageDir);
+    const resolved = path.resolve(root, requested);
+    // Defence in depth: ensure the resolved path is contained in the root.
+    if (resolved !== path.join(root, requested)) return null;
+    if (resolved !== root && !resolved.startsWith(root + path.sep)) return null;
+    return resolved;
   }
 
   /**

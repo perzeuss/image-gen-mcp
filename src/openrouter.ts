@@ -7,9 +7,17 @@
  * See https://openrouter.ai/docs/guides/overview/multimodal/image-generation
  */
 
-import type { Config } from "./config.js";
+import type { Config, ModelType } from "./config.js";
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
+
+/**
+ * Map the configured model type to the OpenRouter `modalities` value.
+ * Pure image models accept only ["image"]; chat-image models want both.
+ */
+export function modalitiesForModelType(type: ModelType): string[] {
+  return type === "image" ? ["image"] : ["image", "text"];
+}
 
 export interface GenerateOptions {
   prompt: string;
@@ -56,7 +64,7 @@ interface OpenRouterResponse {
 }
 
 /** Parse a data URL ("data:image/png;base64,....") into payload + mime type. */
-function parseDataUrl(url: string): GeneratedImage | null {
+export function parseDataUrl(url: string): GeneratedImage | null {
   const match = /^data:([^;,]+)?(;base64)?,(.*)$/s.exec(url);
   if (!match) return null;
   const mimeType = match[1] || "image/png";
@@ -96,9 +104,7 @@ export class OpenRouterClient {
       });
     }
 
-    // Pure image models accept only ["image"]; chat-image models want both.
-    const modalities =
-      this.config.modelType === "image" ? ["image"] : ["image", "text"];
+    const modalities = modalitiesForModelType(this.config.modelType);
 
     const body: Record<string, unknown> = {
       model: this.config.imageModel,

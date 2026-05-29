@@ -6,6 +6,19 @@
 
 export type ModelType = "chat" | "image";
 
+/** Cloudflare R2 storage configuration (S3-compatible). */
+export interface R2Config {
+  /** S3-compatible endpoint, e.g. https://<account>.r2.cloudflarestorage.com */
+  endpoint: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+  bucket: string;
+  /** Public base URL for the bucket / custom domain used to build image links. */
+  publicBaseUrl: string;
+  /** Optional key prefix (folder) for stored objects. */
+  keyPrefix?: string;
+}
+
 export interface Config {
   /** OpenRouter API key used for all upstream requests. */
   openRouterApiKey: string;
@@ -38,6 +51,11 @@ export interface Config {
   defaultImageSize?: string;
   /** Request timeout for OpenRouter calls, in milliseconds. */
   requestTimeoutMs: number;
+  /**
+   * When set, generated images are stored in Cloudflare R2 (preferred over the
+   * local disk). Configured via the R2_* environment variables.
+   */
+  r2?: R2Config;
 }
 
 /** Model id fragments that identify pure image-generation models. */
@@ -78,6 +96,51 @@ function readModelType(modelId: string): ModelType {
   return detectModelType(modelId);
 }
 
+/**
+ * Build the R2 configuration if any R2_* variable is present. R2 is considered
+ * "intended" as soon as one of its variables is set; in that case the full set
+ * is validated so misconfiguration fails loudly instead of silently falling
+ * back to local disk.
+ */
+export function readR2Config(): R2Config | undefined {
+  const bucket = process.env.R2_BUCKET?.trim();
+  const accessKeyId = process.env.R2_ACCESS_KEY_ID?.trim();
+  const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY?.trim();
+  const accountId = process.env.R2_ACCOUNT_ID?.trim();
+  const endpoint = process.env.R2_ENDPOINT?.trim();
+  const publicBaseUrl = process.env.R2_PUBLIC_BASE_URL?.trim().replace(/\/+$/, "");
+  const keyPrefix = process.env.R2_KEY_PREFIX?.trim().replace(/^\/+|\/+$/g, "");
+
+  const anySet = Boolean(
+    bucket || accessKeyId || secretAccessKey || accountId || endpoint || publicBaseUrl,
+  );
+  if (!anySet) return undefined;
+
+  const resolvedEndpoint =
+    endpoint || (accountId ? `https://${accountId}.r2.cloudflarestorage.com` : "");
+
+  const missing: string[] = [];
+  if (!bucket) missing.push("R2_BUCKET");
+  if (!accessKeyId) missing.push("R2_ACCESS_KEY_ID");
+  if (!secretAccessKey) missing.push("R2_SECRET_ACCESS_KEY");
+  if (!resolvedEndpoint) missing.push("R2_ENDPOINT or R2_ACCOUNT_ID");
+  if (!publicBaseUrl) missing.push("R2_PUBLIC_BASE_URL");
+  if (missing.length > 0) {
+    throw new Error(
+      `Cloudflare R2 is partially configured. Missing: ${missing.join(", ")}.`,
+    );
+  }
+
+  return {
+    endpoint: resolvedEndpoint!.replace(/\/+$/, ""),
+    accessKeyId: accessKeyId!,
+    secretAccessKey: secretAccessKey!,
+    bucket: bucket!,
+    publicBaseUrl: publicBaseUrl!,
+    keyPrefix: keyPrefix || undefined,
+  };
+}
+
 export function loadConfig(): Config {
   const openRouterApiKey = (process.env.OPENROUTER_API_KEY || "").trim();
   if (!openRouterApiKey) {
@@ -107,5 +170,6 @@ export function loadConfig(): Config {
       process.env.REQUEST_TIMEOUT_MS || "120000",
       10,
     ),
+    r2: readR2Config(),
   };
 }

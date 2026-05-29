@@ -15,12 +15,13 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { loadConfig } from "./config.js";
 import { OpenRouterClient } from "./openrouter.js";
 import { ImageStore } from "./storage.js";
+import { createStorage } from "./r2.js";
 import { buildMcpServer } from "./mcp.js";
 
 async function main() {
   const config = loadConfig();
   const client = new OpenRouterClient(config);
-  const store = new ImageStore(config);
+  const store = createStorage(config, () => new ImageStore(config));
   await store.init();
 
   const app = express();
@@ -49,20 +50,35 @@ async function main() {
   };
 
   app.get("/health", (_req, res) => {
-    res.json({ status: "ok", model: config.imageModel, modelType: config.modelType });
+    res.json({
+      status: "ok",
+      model: config.imageModel,
+      modelType: config.modelType,
+      storage: store.kind,
+    });
   });
 
-  // Publicly served generated images.
-  app.use(
-    "/images",
-    express.static(config.storageDir, {
-      maxAge: "7d",
-      index: false,
-    }),
-  );
-  app.use("/images", (_req, res) => {
-    res.status(404).json({ error: "Image not found" });
-  });
+  // Local storage is served by this server. R2-backed images are served
+  // directly by Cloudflare, so the route is only registered for local disk.
+  if (store instanceof ImageStore) {
+    const localStore = store;
+    // We resolve the filename through a strict allow-list
+    // (ImageStore.resolveSafe) instead of express.static so that
+    // path-traversal attempts (".." segments, encoded separators, absolute
+    // paths, null bytes) can never escape the storage directory.
+    app.get("/images/:filename", (req, res) => {
+      const absolutePath = localStore.resolveSafe(req.params.filename);
+      if (!absolutePath) {
+        res.status(400).json({ error: "Invalid image name" });
+        return;
+      }
+      res.sendFile(absolutePath, { maxAge: "7d", dotfiles: "deny" }, (err) => {
+        if (err && !res.headersSent) {
+          res.status(404).json({ error: "Image not found" });
+        }
+      });
+    });
+  }
 
   // Stateless Streamable HTTP MCP endpoint.
   app.post("/mcp", async (req: Request, res: Response) => {
@@ -111,14 +127,20 @@ async function main() {
       `image-gen-mcp listening on http://${config.host}:${config.port}`,
     );
     console.log(`  MCP endpoint:   POST /mcp`);
-    console.log(`  Images served:  GET  /images/<file>`);
     console.log(`  Model:          ${config.imageModel} (${config.modelType})`);
-    if (config.publicBaseUrl) {
-      console.log(`  Public base:    ${config.publicBaseUrl}`);
+    if (store.kind === "r2") {
+      console.log(`  Storage:        Cloudflare R2 (${config.r2!.bucket})`);
+      console.log(`  Public base:    ${config.r2!.publicBaseUrl}`);
     } else {
-      console.log(
-        "  Public base:    (derived from request host — set PUBLIC_BASE_URL for stable links)",
-      );
+      console.log(`  Storage:        local disk (${config.storageDir})`);
+      console.log(`  Images served:  GET  /images/<file>`);
+      if (config.publicBaseUrl) {
+        console.log(`  Public base:    ${config.publicBaseUrl}`);
+      } else {
+        console.log(
+          "  Public base:    (derived from request host — set PUBLIC_BASE_URL for stable links)",
+        );
+      }
     }
     if (config.authToken) {
       console.log("  Auth:           bearer token required");
