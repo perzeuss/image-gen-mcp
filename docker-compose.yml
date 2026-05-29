@@ -44,6 +44,15 @@ services:
       REQUEST_TIMEOUT_MS: ${REQUEST_TIMEOUT_MS:-120000}
       IMAGE_STORAGE_DIR: /app/data/images
 
+      # --- OAuth (required to use this as a Claude custom connector) --------
+      # Set OAUTH_PASSWORD to enable the built-in OAuth 2.1 server. Point
+      # OAUTH_ISSUER_URL (or PUBLIC_BASE_URL) at this server's public https URL.
+      OAUTH_PASSWORD: ${OAUTH_PASSWORD:-}
+      OAUTH_ISSUER_URL: ${OAUTH_ISSUER_URL:-}
+      OAUTH_SIGNING_SECRET: ${OAUTH_SIGNING_SECRET:-}
+      OAUTH_ACCESS_TOKEN_TTL: ${OAUTH_ACCESS_TOKEN_TTL:-3600}
+      OAUTH_REFRESH_TOKEN_TTL: ${OAUTH_REFRESH_TOKEN_TTL:-2592000}
+
       # --- Optional Cloudflare R2 storage (preferred when set) -------------
       R2_BUCKET: ${R2_BUCKET:-}
       R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}

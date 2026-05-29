@@ -2,10 +2,13 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  escapeHtml,
   isOriginAllowed,
   parseBool,
   parseList,
   safeStrEqual,
+  signToken,
+  verifyToken,
 } from "../src/security.js";
 
 describe("safeStrEqual", () => {
@@ -65,5 +68,46 @@ describe("isOriginAllowed", () => {
     const allowed = ["https://claude.ai"];
     assert.equal(isOriginAllowed("https://claude.ai", allowed), true);
     assert.equal(isOriginAllowed("https://evil.example", allowed), false);
+  });
+});
+
+describe("signToken / verifyToken", () => {
+  const secret = "test-signing-secret";
+
+  it("round-trips a payload", () => {
+    const token = signToken({ t: "access", cid: "abc", sc: ["x"] }, secret);
+    const claims = verifyToken(token, secret);
+    assert.equal(claims?.t, "access");
+    assert.equal(claims?.cid, "abc");
+    assert.deepEqual(claims?.sc, ["x"]);
+    assert.equal(typeof claims?.iat, "number");
+  });
+
+  it("rejects a token signed with a different secret", () => {
+    const token = signToken({ t: "access" }, secret);
+    assert.equal(verifyToken(token, "other-secret"), null);
+  });
+
+  it("rejects a tampered token", () => {
+    const token = signToken({ t: "access", cid: "abc" }, secret);
+    const [body] = token.split(".");
+    assert.equal(verifyToken(`${body}.deadbeef`, secret), null);
+    assert.equal(verifyToken("not-a-token", secret), null);
+  });
+
+  it("honours expiry", () => {
+    const expired = signToken({ t: "code" }, secret, -1);
+    assert.equal(verifyToken(expired, secret), null);
+    const valid = signToken({ t: "code" }, secret, 60);
+    assert.ok(verifyToken(valid, secret));
+  });
+});
+
+describe("escapeHtml", () => {
+  it("escapes HTML-significant characters", () => {
+    assert.equal(
+      escapeHtml(`<script>"x"&'y'`),
+      "&lt;script&gt;&quot;x&quot;&amp;&#39;y&#39;",
+    );
   });
 });

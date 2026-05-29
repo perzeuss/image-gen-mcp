@@ -4,9 +4,29 @@
  * without code changes.
  */
 
+import { randomBytes } from "node:crypto";
+
 import { parseBool, parseList } from "./security.js";
 
 export type ModelType = "chat" | "image";
+
+/**
+ * OAuth 2.1 authorization-server configuration. Enabled by setting
+ * OAUTH_PASSWORD; required for using the server as a Claude custom connector
+ * (Claude authenticates connectors via OAuth + dynamic client registration).
+ */
+export interface OAuthConfig {
+  /** Public HTTPS issuer/base URL of this server (also the resource id). */
+  issuerUrl: string;
+  /** Shared password the user enters on the consent screen. */
+  password: string;
+  /** HMAC secret used to sign stateless authorization codes and tokens. */
+  signingSecret: string;
+  /** Access-token lifetime in seconds. */
+  accessTokenTtl: number;
+  /** Refresh-token lifetime in seconds. */
+  refreshTokenTtl: number;
+}
 
 /** Cloudflare R2 storage configuration (S3-compatible). */
 export interface R2Config {
@@ -70,6 +90,8 @@ export interface Config {
   rateLimitMax: number;
   /** Optional allow-list of request Origin headers for the MCP endpoint. */
   allowedOrigins?: string[];
+  /** OAuth authorization server, enabled when OAUTH_PASSWORD is set. */
+  oauth?: OAuthConfig;
 }
 
 /** Model id fragments that identify pure image-generation models. */
@@ -155,6 +177,54 @@ export function readR2Config(): R2Config | undefined {
   };
 }
 
+/**
+ * Build the OAuth config when OAUTH_PASSWORD is set. Requires a public HTTPS
+ * issuer URL (OAUTH_ISSUER_URL or PUBLIC_BASE_URL). Fails loudly on
+ * misconfiguration instead of silently leaving the connector unauthenticated.
+ */
+export function readOAuthConfig(): OAuthConfig | undefined {
+  const password = process.env.OAUTH_PASSWORD?.trim();
+  if (!password) return undefined;
+
+  const issuerUrl = (
+    process.env.OAUTH_ISSUER_URL ||
+    process.env.PUBLIC_BASE_URL ||
+    ""
+  )
+    .trim()
+    .replace(/\/+$/, "");
+  if (!issuerUrl) {
+    throw new Error(
+      "OAuth is enabled (OAUTH_PASSWORD set) but no issuer URL is configured. " +
+        "Set OAUTH_ISSUER_URL (or PUBLIC_BASE_URL) to this server's public URL.",
+    );
+  }
+
+  let signingSecret = process.env.OAUTH_SIGNING_SECRET?.trim();
+  if (!signingSecret) {
+    signingSecret = randomBytes(32).toString("hex");
+    console.warn(
+      "[config] OAUTH_SIGNING_SECRET not set — generated an ephemeral one. " +
+        "Existing tokens are invalidated on restart and multiple instances " +
+        "won't share tokens. Set OAUTH_SIGNING_SECRET for production.",
+    );
+  }
+
+  return {
+    issuerUrl,
+    password,
+    signingSecret,
+    accessTokenTtl: Number.parseInt(
+      process.env.OAUTH_ACCESS_TOKEN_TTL || "3600",
+      10,
+    ),
+    refreshTokenTtl: Number.parseInt(
+      process.env.OAUTH_REFRESH_TOKEN_TTL || "2592000",
+      10,
+    ),
+  };
+}
+
 export function loadConfig(): Config {
   const openRouterApiKey = (process.env.OPENROUTER_API_KEY || "").trim();
   if (!openRouterApiKey) {
@@ -196,5 +266,6 @@ export function loadConfig(): Config {
       const list = parseList(process.env.ALLOWED_ORIGINS);
       return list.length > 0 ? list : undefined;
     })(),
+    oauth: readOAuthConfig(),
   };
 }

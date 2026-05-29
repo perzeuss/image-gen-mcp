@@ -83,11 +83,20 @@ connector at `https://<your-deployment-url>/mcp`.
 
 ## 🔌 Connect to Claude
 
-1. In Claude, open **Settings → Connectors → Add custom connector**.
-2. **Remote MCP server URL:** `https://<your-domain>/mcp`
-3. If you set `MCP_AUTH_TOKEN`, configure the connector to send it as a bearer
-   token.
-4. Save, then start a chat and ask Claude to *“generate an image of …”*.
+Claude authenticates custom connectors via **OAuth** (with dynamic client
+registration), so enable the built-in OAuth server first:
+
+1. Set **`OAUTH_PASSWORD`** (the password you'll enter to authorize) and
+   **`OAUTH_ISSUER_URL`** (or `PUBLIC_BASE_URL`) to this server's public
+   **https** URL. For production also set a long random **`OAUTH_SIGNING_SECRET`**.
+2. In Claude, open **Settings → Connectors → Add custom connector**.
+3. **Remote MCP server URL:** `https://<your-domain>/mcp`
+4. Save. Claude registers itself, then opens a consent screen — enter your
+   `OAUTH_PASSWORD` to authorize.
+5. Start a chat and ask Claude to *“generate an image of …”*.
+
+> No `OAuth Client ID`/secret to fill in by hand — the server supports dynamic
+> client registration, so Claude provisions itself automatically.
 
 Anthropic's guide:
 [Get started with custom connectors using remote MCP](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp).
@@ -132,6 +141,20 @@ All configuration is via environment variables.
 | `RATE_LIMIT_MAX` | | `60` | Per-IP requests per window (`0` disables). |
 | `RATE_LIMIT_WINDOW_MS` | | `60000` | Rate-limit window in ms. |
 | `ALLOWED_ORIGINS` | | _(all)_ | Comma-separated `Origin` allow-list for `/mcp`. |
+
+### OAuth (for the Claude connector)
+
+Setting `OAUTH_PASSWORD` enables a built-in OAuth 2.1 authorization server
+(discovery, dynamic client registration, PKCE, refresh tokens) so the server
+can be used as a Claude custom connector.
+
+| Variable | Required | Default | Description |
+|----------|:--------:|---------|-------------|
+| `OAUTH_PASSWORD` | _(enables OAuth)_ | — | Password entered on the consent screen to authorize a client. |
+| `OAUTH_ISSUER_URL` | ✅ when OAuth on | `PUBLIC_BASE_URL` | Public **https** URL of this server (issuer / resource id). |
+| `OAUTH_SIGNING_SECRET` | | _(random)_ | HMAC secret for signing tokens. Set in production so tokens survive restarts. |
+| `OAUTH_ACCESS_TOKEN_TTL` | | `3600` | Access-token lifetime (seconds). |
+| `OAUTH_REFRESH_TOKEN_TTL` | | `2592000` | Refresh-token lifetime (seconds). |
 
 ### Cloudflare R2 storage (optional, preferred when configured)
 
@@ -179,18 +202,19 @@ Claude  ──POST /mcp──▶  image-gen-mcp  ──▶  OpenRouter chat/comp
   `X-Powered-By` leak.
 - **Rate limiting** per client IP to contain abuse and runaway cost
   (`RATE_LIMIT_MAX` / `RATE_LIMIT_WINDOW_MS`), with `/health` exempt.
-- **Constant-time bearer-token check** (`MCP_AUTH_TOKEN`) to avoid timing
-  attacks, plus an optional `Origin` allow-list (`ALLOWED_ORIGINS`).
+- **OAuth 2.1** authorization server (PKCE S256, dynamic client registration,
+  short-lived signed access tokens + refresh tokens) for the Claude connector,
+  or a **constant-time** static bearer-token check (`MCP_AUTH_TOKEN`) for
+  direct access — plus an optional `Origin` allow-list (`ALLOWED_ORIGINS`).
 - **Input validation** — bounded prompt/seed/aspect-ratio inputs and a body-size
   limit; `reference_image` is restricted to `http(s)` and `data:` image URLs.
 - **Runs as a non-root user** in the container, behind `tini` for clean
   shutdowns, with graceful `SIGTERM`/`SIGINT` handling.
 
-> **Note on the Claude connector:** Claude's custom-connector flow authenticates
-> via OAuth and cannot send a static bearer token. For the Claude connector,
-> leave `MCP_AUTH_TOKEN` empty and protect the endpoint at the network layer
-> (e.g. Cloudflare Access, or a WAF rule allowing only Anthropic's IP ranges).
-> `MCP_AUTH_TOKEN` is still useful for locking down direct/`curl` access.
+> **Claude connector vs. static token:** Claude's connector flow uses OAuth, so
+> set `OAUTH_PASSWORD` for it (don't rely on `MCP_AUTH_TOKEN`, which Claude can't
+> send). `MCP_AUTH_TOKEN` remains useful for locking down direct/`curl` access
+> when OAuth is off. When `OAUTH_PASSWORD` is set, OAuth takes over `/mcp` auth.
 
 ## 🧪 Development
 

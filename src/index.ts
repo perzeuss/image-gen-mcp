@@ -9,16 +9,26 @@
  *   - GET  /health     Health check.
  */
 
-import express, { type Request, type Response } from "express";
+import express, {
+  type Request,
+  type RequestHandler,
+  type Response,
+} from "express";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import {
+  getOAuthProtectedResourceMetadataUrl,
+  mcpAuthRouter,
+} from "@modelcontextprotocol/sdk/server/auth/router.js";
+import { requireBearerAuth } from "@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js";
 
 import { loadConfig } from "./config.js";
 import { OpenRouterClient } from "./openrouter.js";
 import { ImageStore } from "./storage.js";
 import { createStorage } from "./r2.js";
 import { buildMcpServer } from "./mcp.js";
+import { StatelessOAuthProvider } from "./oauth.js";
 import { isOriginAllowed, safeStrEqual } from "./security.js";
 
 async function main() {
@@ -75,8 +85,8 @@ async function main() {
     return host ? `${proto}://${host}` : "";
   };
 
-  // Optional bearer-token protection + Origin allow-list for the MCP endpoint.
-  const checkAccess = (req: Request, res: Response): boolean => {
+  // Origin allow-list guard (applies regardless of the auth scheme).
+  const originGuard: RequestHandler = (req, res, next) => {
     const origin = req.headers.origin as string | undefined;
     if (!isOriginAllowed(origin, config.allowedOrigins ?? [])) {
       res.status(403).json({
@@ -84,22 +94,59 @@ async function main() {
         error: { code: -32003, message: "Forbidden origin" },
         id: null,
       });
-      return false;
+      return;
     }
-    if (config.authToken) {
-      const header = req.headers.authorization || "";
-      const token = header.replace(/^Bearer\s+/i, "").trim();
-      if (!token || !safeStrEqual(token, config.authToken)) {
-        res.status(401).json({
-          jsonrpc: "2.0",
-          error: { code: -32001, message: "Unauthorized" },
-          id: null,
-        });
-        return false;
-      }
-    }
-    return true;
+    next();
   };
+
+  // Legacy static bearer-token guard (used only when OAuth is disabled).
+  const staticTokenGuard: RequestHandler = (req, res, next) => {
+    if (!config.authToken) return next();
+    const header = req.headers.authorization || "";
+    const token = header.replace(/^Bearer\s+/i, "").trim();
+    if (!token || !safeStrEqual(token, config.authToken)) {
+      res.status(401).json({
+        jsonrpc: "2.0",
+        error: { code: -32001, message: "Unauthorized" },
+        id: null,
+      });
+      return;
+    }
+    next();
+  };
+
+  // Choose the auth scheme: full OAuth 2.1 (for Claude connectors) when
+  // OAUTH_PASSWORD is set, otherwise the optional static token / open access.
+  let authMode: "oauth" | "token" | "open";
+  let mcpGuards: RequestHandler[];
+  if (config.oauth) {
+    const provider = new StatelessOAuthProvider(config.oauth);
+    const issuerUrl = new URL(config.oauth.issuerUrl);
+    const resourceServerUrl = new URL("/mcp", issuerUrl);
+    // Mount discovery, dynamic client registration, /authorize and /token.
+    // resourceServerUrl makes the protected-resource metadata served at
+    // /.well-known/oauth-protected-resource/mcp, matching the WWW-Authenticate
+    // header below.
+    app.use(
+      mcpAuthRouter({
+        provider,
+        issuerUrl,
+        resourceServerUrl,
+        scopesSupported: [],
+        resourceName: "Image Gen MCP",
+      }),
+    );
+    const resourceMetadataUrl =
+      getOAuthProtectedResourceMetadataUrl(resourceServerUrl);
+    mcpGuards = [
+      originGuard,
+      requireBearerAuth({ verifier: provider, resourceMetadataUrl }),
+    ];
+    authMode = "oauth";
+  } else {
+    mcpGuards = [originGuard, staticTokenGuard];
+    authMode = config.authToken ? "token" : "open";
+  }
 
   app.get("/health", (_req, res) => {
     res.json({
@@ -133,8 +180,7 @@ async function main() {
   }
 
   // Stateless Streamable HTTP MCP endpoint.
-  app.post("/mcp", async (req: Request, res: Response) => {
-    if (!checkAccess(req, res)) return;
+  app.post("/mcp", ...mcpGuards, async (req: Request, res: Response) => {
     try {
       const server = buildMcpServer({
         config,
@@ -194,9 +240,12 @@ async function main() {
         );
       }
     }
-    console.log(
-      `  Auth:           ${config.authToken ? "bearer token required" : "open (no token)"}`,
-    );
+    const authLabel = {
+      oauth: `OAuth 2.1 (issuer ${config.oauth?.issuerUrl})`,
+      token: "static bearer token",
+      open: "open (no auth)",
+    }[authMode];
+    console.log(`  Auth:           ${authLabel}`);
     console.log(
       `  Rate limit:     ${config.rateLimitMax > 0 ? `${config.rateLimitMax}/${config.rateLimitWindowMs}ms per IP` : "disabled"}`,
     );
