@@ -1,6 +1,6 @@
 {
   "name": "image-gen-mcp",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Remote MCP server for OpenRouter image generation, usable as a Claude custom connector. Generates images, stores them on the server and returns a public link.",
   "license": "MIT",
   "author": "Pascal Malbranche",
