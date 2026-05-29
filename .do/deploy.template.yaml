@@ -1,0 +1,46 @@
+# DigitalOcean App Platform template — powers the "Deploy to DO" button.
+# https://docs.digitalocean.com/products/app-platform/reference/app-spec/
+spec:
+  name: image-gen-mcp
+  features:
+    - buildpack-stack=ubuntu-22
+  services:
+    - name: web
+      dockerfile_path: Dockerfile
+      git:
+        repo_clone_url: https://github.com/perzeuss/image-gen-mcp.git
+        branch: main
+      http_port: 3000
+      instance_size_slug: apps-s-1vcpu-0.5gb
+      instance_count: 1
+      health_check:
+        http_path: /health
+      envs:
+        - key: OPENROUTER_API_KEY
+          scope: RUN_TIME
+          type: SECRET
+        - key: IMAGE_MODEL
+          scope: RUN_TIME
+          value: google/gemini-2.5-flash-image
+        - key: IMAGE_MODEL_TYPE
+          scope: RUN_TIME
+          value: auto
+        - key: MCP_AUTH_TOKEN
+          scope: RUN_TIME
+          type: SECRET
+        - key: PUBLIC_BASE_URL
+          scope: RUN_TIME
+          value: ${APP_URL}
+        # Optional Cloudflare R2 storage (leave unset to use the local disk).
+        - key: R2_BUCKET
+          scope: RUN_TIME
+        - key: R2_ACCESS_KEY_ID
+          scope: RUN_TIME
+          type: SECRET
+        - key: R2_SECRET_ACCESS_KEY
+          scope: RUN_TIME
+          type: SECRET
+        - key: R2_ACCOUNT_ID
+          scope: RUN_TIME
+        - key: R2_PUBLIC_BASE_URL
+          scope: RUN_TIME

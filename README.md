@@ -1,50 +1,118 @@
-# image-gen-mcp
+<div align="center">
 
-A remote **MCP server** for the [OpenRouter](https://openrouter.ai) image
-generation API. Use it as a **Claude custom connector** to generate images
-directly from a chat. Every generated image is **stored on the server** and
-served back as a **public link** (in addition to being shown inline).
+# 🎨 Image Gen MCP
 
-- Works with **chat-style image models** (e.g. *NanoBanana* / Google
-  Gemini Flash Image, GPT image models) — these are chat models that emit
-  images, driven with `modalities: ["image", "text"]`.
-- Works with **pure image-generation models** (e.g. *Flux*) — driven with
-  `modalities: ["image"]`.
-- Fully configured through **environment variables** — ready to deploy with
-  **Docker Compose / Dokploy**.
+**A remote MCP server that lets Claude generate real images — right inside your chat.**
+
+Connect it to Claude as a [custom connector](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp)
+and ask Claude to create images for you. Every image is stored and returned as a
+**public link**, so it drops straight into mockups, design artifacts, slides and docs.
+
+Powered by [OpenRouter](https://openrouter.ai) — use **NanoBanana / Gemini Flash Image**,
+**Flux**, **GPT Image**, **Seedream** and more, all behind one connector.
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
+![Node](https://img.shields.io/badge/node-%E2%89%A520-339933?logo=node.js&logoColor=white)
+![MCP](https://img.shields.io/badge/MCP-remote%20connector-6E56CF)
+
+</div>
 
 ---
 
-## How it works
+## ✨ Why
 
+Claude is great at *designing* mockups, landing pages and UI concepts — but it
+can only describe images, not produce them. This connector closes that gap:
+
+- 🖼️ **Real images for mockups** — ask Claude to design a layout and have it fill
+  in real hero images, icons, textures and product shots instead of grey
+  placeholders.
+- 🔗 **Public links, not just inline previews** — each generated image gets a
+  stable URL you can paste into an artifact, a Figma frame, a slide or a PR.
+- 🔌 **One connector, many models** — swap between chat-style image models
+  (NanoBanana / Gemini Flash Image) and dedicated image models (Flux) with a
+  single environment variable.
+- ☁️ **Bring your own storage** — local disk by default, or **Cloudflare R2**
+  for durable, CDN-served links.
+
+## 🧠 Supported models
+
+| Kind | Examples | How it's driven |
+|------|----------|-----------------|
+| **Chat-style image models** | `google/gemini-2.5-flash-image` (NanoBanana), `openai/gpt-5-image` | Chat models that *also* emit images → `modalities: ["image", "text"]` |
+| **Dedicated image models** | `black-forest-labs/flux.2-pro`, `bytedance/seedream-4.5` | Pure image generators → `modalities: ["image"]` |
+
+The model type is auto-detected from the model id and can be overridden — see
+[Configuration](#%EF%B8%8F-configuration).
+
+---
+
+## 🚀 Quick start (self-hosting with Docker Compose)
+
+```bash
+git clone https://github.com/perzeuss/image-gen-mcp.git
+cd image-gen-mcp
+cp .env.example .env          # set OPENROUTER_API_KEY (and a MCP_AUTH_TOKEN)
+docker compose up -d --build
 ```
-Claude  ──POST /mcp──▶  image-gen-mcp  ──▶  OpenRouter chat/completions
-                              │
-                              ├─ stores image:
-                              │     • Cloudflare R2  (if R2_* configured)  ──▶ served by Cloudflare
-                              │     • local disk      (otherwise)          ──▶ GET /images/<file>
-                              └─ returns inline image + public link
+
+The MCP endpoint is now at `http://localhost:3000/mcp`. Put it behind a reverse
+proxy that terminates TLS (Caddy, nginx, Traefik, …) and set `PUBLIC_BASE_URL`
+to your public `https://` URL so image links are stable.
+
+Health check:
+
+```bash
+curl http://localhost:3000/health
+# {"status":"ok","model":"google/gemini-2.5-flash-image","modelType":"chat","storage":"local"}
 ```
 
-The server exposes a single Streamable-HTTP MCP endpoint at `POST /mcp`. With
-local storage it also serves images at `GET /images/<file>`; with R2 the links
-point at Cloudflare directly.
+## ☁️ One-click deploy
 
-The image-serving route validates filenames against a strict allow-list (it
-never passes user input to the filesystem unchecked), so path-traversal
-attempts — `..` segments, encoded separators, absolute paths, null bytes —
-cannot escape the storage directory.
+Deploy the server to a managed host in a couple of clicks:
 
-### Tools
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/new?referralCode=3vmRew)
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/perzeuss/image-gen-mcp)
+[![Deploy to DigitalOcean](https://www.deploytodo.com/do-btn-blue.svg)](https://cloud.digitalocean.com/apps/new?repo=https://github.com/perzeuss/image-gen-mcp/tree/main)
+
+After the first deploy, set at least `OPENROUTER_API_KEY` (and ideally
+`MCP_AUTH_TOKEN`) in the provider's environment settings, then point your Claude
+connector at `https://<your-deployment-url>/mcp`.
+
+---
+
+## 🔌 Connect to Claude
+
+1. In Claude, open **Settings → Connectors → Add custom connector**.
+2. **Remote MCP server URL:** `https://<your-domain>/mcp`
+3. If you set `MCP_AUTH_TOKEN`, configure the connector to send it as a bearer
+   token.
+4. Save, then start a chat and ask Claude to *“generate an image of …”*.
+
+Anthropic's guide:
+[Get started with custom connectors using remote MCP](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp).
+
+### Using it for mockups
+
+> *“Design a landing page for a coffee subscription. Use the connector to
+> generate a warm, photographic hero image (16:9) and three product shots, and
+> embed the links in the mockup.”*
+
+Claude calls `generate_image`, gets back public URLs, and drops the real images
+straight into the artifact it's building.
+
+---
+
+## 🛠️ Tools
 
 | Tool | Description |
 |------|-------------|
 | `generate_image` | Generate an image from a prompt. Params: `prompt` (required), `aspect_ratio`, `image_size`, `negative_prompt`, `seed`, `reference_image` (image-to-image). Returns the inline image **and** its public URL. |
-| `get_image_model_info` | Report the configured model and how it is driven (chat vs. image). |
+| `get_image_model_info` | Report the configured model and how it's driven (chat vs. image). |
 
----
+## ⚙️ Configuration
 
-## Configuration (environment variables)
+All configuration is via environment variables.
 
 | Variable | Required | Default | Description |
 |----------|:--------:|---------|-------------|
@@ -62,9 +130,9 @@ cannot escape the storage directory.
 
 ### Cloudflare R2 storage (optional, preferred when configured)
 
-If the `R2_*` variables are set, images are uploaded to **Cloudflare R2** and
-served directly by Cloudflare instead of from local disk. Setting any `R2_`
-variable enables R2 and requires the full set below.
+Set the `R2_*` variables to store images in **Cloudflare R2** and serve them
+directly from Cloudflare instead of local disk. Setting any `R2_` variable
+enables R2 and requires the full set below.
 
 | Variable | Required | Description |
 |----------|:--------:|-------------|
@@ -73,96 +141,48 @@ variable enables R2 and requires the full set below.
 | `R2_SECRET_ACCESS_KEY` | ✅ | R2 secret access key. |
 | `R2_ACCOUNT_ID` | ✅* | Cloudflare account id (endpoint derived as `https://<id>.r2.cloudflarestorage.com`). |
 | `R2_ENDPOINT` | ✅* | Full S3 endpoint — alternative to `R2_ACCOUNT_ID`. |
-| `R2_PUBLIC_BASE_URL` | ✅ | Public bucket/custom-domain URL used to build links, e.g. `https://images.example.com` or `https://pub-xxxx.r2.dev`. |
+| `R2_PUBLIC_BASE_URL` | ✅ | Public bucket/custom-domain URL, e.g. `https://images.example.com` or `https://pub-xxxx.r2.dev`. |
 | `R2_KEY_PREFIX` | | Optional object key prefix (folder). |
 
 > \* Provide either `R2_ACCOUNT_ID` **or** `R2_ENDPOINT`.
 
-> **Chat vs. image model:** if you point `IMAGE_MODEL` at a pure image model
-> such as `black-forest-labs/flux.2-pro`, `auto` detection selects
-> `modalities: ["image"]`. For chat-image models such as
-> `google/gemini-2.5-flash-image` it selects `["image", "text"]`. Override with
-> `IMAGE_MODEL_TYPE` if your model isn't recognised.
-
 ---
 
-## Run locally
+## 🧩 How it works
 
-```bash
-npm install
-npm run build
-
-export OPENROUTER_API_KEY=sk-or-v1-...
-export IMAGE_MODEL=google/gemini-2.5-flash-image
-npm start
-# → POST http://localhost:3000/mcp
 ```
-
-Quick check:
-
-```bash
-curl http://localhost:3000/health
+Claude  ──POST /mcp──▶  image-gen-mcp  ──▶  OpenRouter chat/completions
+                              │
+                              ├─ stores image:
+                              │     • Cloudflare R2  (if R2_* configured) ──▶ served by Cloudflare
+                              │     • local disk      (otherwise)         ──▶ GET /images/<file>
+                              └─ returns inline image + public link
 ```
-
-## Tests
-
-Unit tests (config/model detection, data-URL parsing, modality selection,
-storage backends, path-traversal protection) run with the Node test runner:
-
-```bash
-npm test
-npm run typecheck
-```
-
----
-
-## Deploy with Docker Compose / Dokploy
-
-1. Push this repository to GitHub.
-2. In **Dokploy**, create a **Compose** application pointing at the repo
-   (the included `docker-compose.yml` builds from the `Dockerfile`).
-3. Set the environment variables in Dokploy's **Environment** tab — at minimum
-   `OPENROUTER_API_KEY`, `IMAGE_MODEL`, and (recommended) `MCP_AUTH_TOKEN`.
-4. Attach a **domain** to the `image-gen-mcp` service in the Dokploy UI.
-   Dokploy provisions TLS and routes the domain to port `3000` via Traefik.
-5. Set `PUBLIC_BASE_URL` to that domain (e.g. `https://images.example.com`) so
-   the shared image links are stable across redeploys.
-
-Generated images persist in the `image-data` Docker volume.
-
-Local Compose run:
-
-```bash
-cp .env.example .env   # fill in OPENROUTER_API_KEY etc.
-docker compose up --build
-```
-
----
-
-## Add as a Claude custom connector
-
-In Claude, go to **Settings → Connectors → Add custom connector** and enter:
-
-- **Remote MCP server URL:** `https://<your-domain>/mcp`
-- If you set `MCP_AUTH_TOKEN`, configure the connector to send it as a
-  bearer token.
-
-See Anthropic's guide:
-[Get started with custom connectors using remote MCP](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp).
-
-Then ask Claude to *"generate an image of …"* — it will call `generate_image`,
-show the image inline, and include the public link.
-
----
-
-## Endpoints
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| `POST` | `/mcp` | Streamable-HTTP MCP endpoint (connector URL). |
+| `POST` | `/mcp` | Streamable-HTTP MCP endpoint (the connector URL). |
 | `GET` | `/images/<file>` | Public, persisted images (local storage only). |
 | `GET` | `/health` | Health check (reports model + active storage backend). |
 
-## License
+## 🔒 Security
 
-MIT
+- The image-serving route validates filenames against a strict allow-list and a
+  containment check — `..` segments, encoded separators, absolute paths and null
+  bytes can never escape the storage directory.
+- Set `MCP_AUTH_TOKEN` for any public deployment: the server holds your
+  OpenRouter key, so the `/mcp` endpoint should not be open to the world.
+
+## 🧪 Development
+
+```bash
+npm install
+npm run build      # compile TypeScript to dist/
+npm start          # run the server
+npm test           # unit tests (Node test runner)
+npm run typecheck  # type-only check
+```
+
+## 📄 License
+
+[MIT](./LICENSE) © Pascal Malbranche

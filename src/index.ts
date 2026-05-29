@@ -28,7 +28,7 @@ async function main() {
   app.use(express.json({ limit: "25mb" }));
 
   // Resolve the externally reachable origin for a request, honouring reverse
-  // proxies (Dokploy / Traefik set x-forwarded-* headers).
+  // proxies (Traefik, nginx, ... set x-forwarded-* headers).
   const requestOrigin = (req: Request): string => {
     const proto = (req.headers["x-forwarded-proto"] as string)?.split(",")[0] || req.protocol;
     const host = (req.headers["x-forwarded-host"] as string)?.split(",")[0] || req.headers.host;

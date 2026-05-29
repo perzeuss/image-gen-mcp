@@ -1,7 +1,7 @@
 /**
  * Central configuration, loaded entirely from environment variables so the
- * server can be configured for any deployment (Docker, Dokploy, local) without
- * code changes.
+ * server can be configured for any deployment (Docker, local, managed hosts)
+ * without code changes.
  */
 
 export type ModelType = "chat" | "image";
