@@ -6,7 +6,7 @@
 
 import { randomBytes } from "node:crypto";
 
-import { parseBool, parseList } from "./security.js";
+import { parseList } from "./security.js";
 
 export type ModelType = "chat" | "image";
 
@@ -80,8 +80,12 @@ export interface Config {
   r2?: R2Config;
 
   // --- Security / hardening ---
-  /** Trust X-Forwarded-* headers (true when running behind a reverse proxy). */
-  trustProxy: boolean;
+  /**
+   * Express "trust proxy" setting. A number of proxy hops to trust (default 1,
+   * suitable for a single reverse proxy) is recommended over `true`, which is
+   * permissive and lets clients spoof X-Forwarded-For to bypass rate limiting.
+   */
+  trustProxy: boolean | number;
   /** Max accepted JSON request body size (Express byte-size string). */
   maxBodySize: string;
   /** Rate-limit window in milliseconds. */
@@ -234,6 +238,20 @@ export function readOAuthConfig(): OAuthConfig | undefined {
   };
 }
 
+/**
+ * Parse the TRUST_PROXY env var. Accepts a number of hops, or `true`/`false`.
+ * Defaults to 1 (a single reverse proxy) — not `true`, which is permissive and
+ * lets clients spoof X-Forwarded-For to bypass IP-based rate limiting.
+ */
+export function readTrustProxy(): boolean | number {
+  const raw = process.env.TRUST_PROXY?.trim().toLowerCase();
+  if (raw === undefined || raw === "") return 1;
+  if (["false", "off", "no", "0"].includes(raw)) return false;
+  if (["true", "on", "yes"].includes(raw)) return true;
+  const n = Number.parseInt(raw, 10);
+  return Number.isNaN(n) ? 1 : n;
+}
+
 export function loadConfig(): Config {
   const openRouterApiKey = (process.env.OPENROUTER_API_KEY || "").trim();
   if (!openRouterApiKey) {
@@ -264,7 +282,7 @@ export function loadConfig(): Config {
       10,
     ),
     r2: readR2Config(),
-    trustProxy: parseBool(process.env.TRUST_PROXY, true),
+    trustProxy: readTrustProxy(),
     maxBodySize: (process.env.MAX_BODY_SIZE || "25mb").trim(),
     rateLimitWindowMs: Number.parseInt(
       process.env.RATE_LIMIT_WINDOW_MS || "60000",

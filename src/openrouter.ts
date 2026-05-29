@@ -170,10 +170,12 @@ export class OpenRouterClient {
       if (err instanceof Error && err.name === "AbortError") {
         throw new Error(
           `OpenRouter request timed out after ${this.config.requestTimeoutMs}ms.`,
+          { cause: err },
         );
       }
       throw new Error(
         `Failed to reach OpenRouter: ${err instanceof Error ? err.message : String(err)}`,
+        { cause: err },
       );
     } finally {
       clearTimeout(timeout);

@@ -60,7 +60,7 @@ async function main() {
     app.use(
       rateLimit({
         windowMs: config.rateLimitWindowMs,
-        max: config.rateLimitMax,
+        limit: config.rateLimitMax,
         standardHeaders: true,
         legacyHeaders: false,
         // Don't rate-limit health checks from orchestrators / uptime monitors.
