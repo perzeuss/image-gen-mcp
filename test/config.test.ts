@@ -1,7 +1,32 @@
 import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it } from "node:test";
 
-import { detectModelType, loadConfig } from "../src/config.js";
+import { detectModelType, loadConfig, readTrustProxy } from "../src/config.js";
+
+describe("readTrustProxy", () => {
+  const saved = process.env.TRUST_PROXY;
+  afterEach(() => {
+    if (saved === undefined) delete process.env.TRUST_PROXY;
+    else process.env.TRUST_PROXY = saved;
+  });
+
+  it("defaults to 1 hop", () => {
+    delete process.env.TRUST_PROXY;
+    assert.equal(readTrustProxy(), 1);
+  });
+
+  it("parses a numeric hop count", () => {
+    process.env.TRUST_PROXY = "2";
+    assert.equal(readTrustProxy(), 2);
+  });
+
+  it("parses booleans", () => {
+    process.env.TRUST_PROXY = "false";
+    assert.equal(readTrustProxy(), false);
+    process.env.TRUST_PROXY = "true";
+    assert.equal(readTrustProxy(), true);
+  });
+});
 
 describe("detectModelType", () => {
   it("treats Flux and other pure image models as 'image'", () => {
