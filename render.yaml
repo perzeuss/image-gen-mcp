@@ -1,0 +1,39 @@
+# Render blueprint — https://render.com/docs/blueprint-spec
+# Deploy with the "Deploy to Render" button in the README, or run
+# `render blueprint launch` against this file.
+services:
+  - type: web
+    name: image-gen-mcp
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    healthCheckPath: /health
+    autoDeploy: true
+    # Persist generated images when using the local storage backend.
+    # (Remove this block if you store images in Cloudflare R2.)
+    disk:
+      name: images
+      mountPath: /app/data/images
+      sizeGB: 1
+    envVars:
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: IMAGE_MODEL
+        value: google/gemini-2.5-flash-image
+      - key: IMAGE_MODEL_TYPE
+        value: auto
+      - key: MCP_AUTH_TOKEN
+        generateValue: true
+      - key: PUBLIC_BASE_URL
+        sync: false
+      # Optional Cloudflare R2 storage (leave unset to use the local disk).
+      - key: R2_BUCKET
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_PUBLIC_BASE_URL
+        sync: false

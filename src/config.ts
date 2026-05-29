@@ -1,10 +1,45 @@
 /**
  * Central configuration, loaded entirely from environment variables so the
- * server can be configured for any deployment (Docker, Dokploy, local) without
- * code changes.
+ * server can be configured for any deployment (Docker, local, managed hosts)
+ * without code changes.
  */
 
+import { randomBytes } from "node:crypto";
+
+import { parseBool, parseList } from "./security.js";
+
 export type ModelType = "chat" | "image";
+
+/**
+ * OAuth 2.1 authorization-server configuration. Enabled by setting
+ * OAUTH_PASSWORD; required for using the server as a Claude custom connector
+ * (Claude authenticates connectors via OAuth + dynamic client registration).
+ */
+export interface OAuthConfig {
+  /** Public HTTPS issuer/base URL of this server (also the resource id). */
+  issuerUrl: string;
+  /** Shared password the user enters on the consent screen. */
+  password: string;
+  /** HMAC secret used to sign stateless authorization codes and tokens. */
+  signingSecret: string;
+  /** Access-token lifetime in seconds. */
+  accessTokenTtl: number;
+  /** Refresh-token lifetime in seconds. */
+  refreshTokenTtl: number;
+}
+
+/** Cloudflare R2 storage configuration (S3-compatible). */
+export interface R2Config {
+  /** S3-compatible endpoint, e.g. https://<account>.r2.cloudflarestorage.com */
+  endpoint: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+  bucket: string;
+  /** Public base URL for the bucket / custom domain used to build image links. */
+  publicBaseUrl: string;
+  /** Optional key prefix (folder) for stored objects. */
+  keyPrefix?: string;
+}
 
 export interface Config {
   /** OpenRouter API key used for all upstream requests. */
@@ -38,6 +73,25 @@ export interface Config {
   defaultImageSize?: string;
   /** Request timeout for OpenRouter calls, in milliseconds. */
   requestTimeoutMs: number;
+  /**
+   * When set, generated images are stored in Cloudflare R2 (preferred over the
+   * local disk). Configured via the R2_* environment variables.
+   */
+  r2?: R2Config;
+
+  // --- Security / hardening ---
+  /** Trust X-Forwarded-* headers (true when running behind a reverse proxy). */
+  trustProxy: boolean;
+  /** Max accepted JSON request body size (Express byte-size string). */
+  maxBodySize: string;
+  /** Rate-limit window in milliseconds. */
+  rateLimitWindowMs: number;
+  /** Max requests per window per client IP (0 disables rate limiting). */
+  rateLimitMax: number;
+  /** Optional allow-list of request Origin headers for the MCP endpoint. */
+  allowedOrigins?: string[];
+  /** OAuth authorization server, enabled when OAUTH_PASSWORD is set. */
+  oauth?: OAuthConfig;
 }
 
 /** Model id fragments that identify pure image-generation models. */
@@ -78,6 +132,108 @@ function readModelType(modelId: string): ModelType {
   return detectModelType(modelId);
 }
 
+/**
+ * Build the R2 configuration if any R2_* variable is present. R2 is considered
+ * "intended" as soon as one of its variables is set; in that case the full set
+ * is validated so misconfiguration fails loudly instead of silently falling
+ * back to local disk.
+ */
+export function readR2Config(): R2Config | undefined {
+  const bucket = process.env.R2_BUCKET?.trim();
+  const accessKeyId = process.env.R2_ACCESS_KEY_ID?.trim();
+  const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY?.trim();
+  const accountId = process.env.R2_ACCOUNT_ID?.trim();
+  const endpoint = process.env.R2_ENDPOINT?.trim();
+  const publicBaseUrl = process.env.R2_PUBLIC_BASE_URL?.trim().replace(
+    /\/+$/,
+    "",
+  );
+  const keyPrefix = process.env.R2_KEY_PREFIX?.trim().replace(/^\/+|\/+$/g, "");
+
+  const anySet = Boolean(
+    bucket ||
+    accessKeyId ||
+    secretAccessKey ||
+    accountId ||
+    endpoint ||
+    publicBaseUrl,
+  );
+  if (!anySet) return undefined;
+
+  const resolvedEndpoint =
+    endpoint ||
+    (accountId ? `https://${accountId}.r2.cloudflarestorage.com` : "");
+
+  const missing: string[] = [];
+  if (!bucket) missing.push("R2_BUCKET");
+  if (!accessKeyId) missing.push("R2_ACCESS_KEY_ID");
+  if (!secretAccessKey) missing.push("R2_SECRET_ACCESS_KEY");
+  if (!resolvedEndpoint) missing.push("R2_ENDPOINT or R2_ACCOUNT_ID");
+  if (!publicBaseUrl) missing.push("R2_PUBLIC_BASE_URL");
+  if (missing.length > 0) {
+    throw new Error(
+      `Cloudflare R2 is partially configured. Missing: ${missing.join(", ")}.`,
+    );
+  }
+
+  return {
+    endpoint: resolvedEndpoint!.replace(/\/+$/, ""),
+    accessKeyId: accessKeyId!,
+    secretAccessKey: secretAccessKey!,
+    bucket: bucket!,
+    publicBaseUrl: publicBaseUrl!,
+    keyPrefix: keyPrefix || undefined,
+  };
+}
+
+/**
+ * Build the OAuth config when OAUTH_PASSWORD is set. Requires a public HTTPS
+ * issuer URL (OAUTH_ISSUER_URL or PUBLIC_BASE_URL). Fails loudly on
+ * misconfiguration instead of silently leaving the connector unauthenticated.
+ */
+export function readOAuthConfig(): OAuthConfig | undefined {
+  const password = process.env.OAUTH_PASSWORD?.trim();
+  if (!password) return undefined;
+
+  const issuerUrl = (
+    process.env.OAUTH_ISSUER_URL ||
+    process.env.PUBLIC_BASE_URL ||
+    ""
+  )
+    .trim()
+    .replace(/\/+$/, "");
+  if (!issuerUrl) {
+    throw new Error(
+      "OAuth is enabled (OAUTH_PASSWORD set) but no issuer URL is configured. " +
+        "Set OAUTH_ISSUER_URL (or PUBLIC_BASE_URL) to this server's public URL.",
+    );
+  }
+
+  let signingSecret = process.env.OAUTH_SIGNING_SECRET?.trim();
+  if (!signingSecret) {
+    signingSecret = randomBytes(32).toString("hex");
+    console.warn(
+      "[config] OAUTH_SIGNING_SECRET not set — generated an ephemeral one. " +
+        "Existing tokens are invalidated on restart and multiple instances " +
+        "won't share tokens. Set OAUTH_SIGNING_SECRET for production.",
+    );
+  }
+
+  return {
+    issuerUrl,
+    password,
+    signingSecret,
+    accessTokenTtl: Number.parseInt(
+      process.env.OAUTH_ACCESS_TOKEN_TTL || "3600",
+      10,
+    ),
+    refreshTokenTtl: Number.parseInt(
+      process.env.OAUTH_REFRESH_TOKEN_TTL || "2592000",
+      10,
+    ),
+  };
+}
+
 export function loadConfig(): Config {
   const openRouterApiKey = (process.env.OPENROUTER_API_KEY || "").trim();
   if (!openRouterApiKey) {
@@ -107,5 +263,18 @@ export function loadConfig(): Config {
       process.env.REQUEST_TIMEOUT_MS || "120000",
       10,
     ),
+    r2: readR2Config(),
+    trustProxy: parseBool(process.env.TRUST_PROXY, true),
+    maxBodySize: (process.env.MAX_BODY_SIZE || "25mb").trim(),
+    rateLimitWindowMs: Number.parseInt(
+      process.env.RATE_LIMIT_WINDOW_MS || "60000",
+      10,
+    ),
+    rateLimitMax: Number.parseInt(process.env.RATE_LIMIT_MAX || "60", 10),
+    allowedOrigins: (() => {
+      const list = parseList(process.env.ALLOWED_ORIGINS);
+      return list.length > 0 ? list : undefined;
+    })(),
+    oauth: readOAuthConfig(),
   };
 }

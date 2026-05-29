@@ -7,9 +7,17 @@
  * See https://openrouter.ai/docs/guides/overview/multimodal/image-generation
  */
 
-import type { Config } from "./config.js";
+import type { Config, ModelType } from "./config.js";
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
+
+/**
+ * Map the configured model type to the OpenRouter `modalities` value.
+ * Pure image models accept only ["image"]; chat-image models want both.
+ */
+export function modalitiesForModelType(type: ModelType): string[] {
+  return type === "image" ? ["image"] : ["image", "text"];
+}
 
 export interface GenerateOptions {
   prompt: string;
@@ -43,7 +51,9 @@ interface OpenRouterImagePart {
   image_url: { url: string };
 }
 
-type OpenRouterContent = string | (OpenRouterMessageContentText | OpenRouterImagePart)[];
+type OpenRouterContent =
+  | string
+  | (OpenRouterMessageContentText | OpenRouterImagePart)[];
 
 interface OpenRouterResponse {
   error?: { message?: string; code?: number | string };
@@ -55,8 +65,23 @@ interface OpenRouterResponse {
   }>;
 }
 
+/**
+ * Only allow http(s) URLs and data: image URLs as reference images. Rejects
+ * schemes like file:, ftp: or gopher: that could be abused as request vectors.
+ */
+export function isAllowedImageRef(ref: string): boolean {
+  const value = ref.trim();
+  if (/^data:image\//i.test(value)) return true;
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 /** Parse a data URL ("data:image/png;base64,....") into payload + mime type. */
-function parseDataUrl(url: string): GeneratedImage | null {
+export function parseDataUrl(url: string): GeneratedImage | null {
   const match = /^data:([^;,]+)?(;base64)?,(.*)$/s.exec(url);
   if (!match) return null;
   const mimeType = match[1] || "image/png";
@@ -66,7 +91,10 @@ function parseDataUrl(url: string): GeneratedImage | null {
     return { base64: data, mimeType };
   }
   // Non-base64 data URL (rare for images) -> encode it.
-  return { base64: Buffer.from(decodeURIComponent(data)).toString("base64"), mimeType };
+  return {
+    base64: Buffer.from(decodeURIComponent(data)).toString("base64"),
+    mimeType,
+  };
 }
 
 export class OpenRouterClient {
@@ -76,6 +104,12 @@ export class OpenRouterClient {
     const prompt = opts.prompt?.trim();
     if (!prompt) {
       throw new Error("Prompt must not be empty.");
+    }
+
+    if (opts.referenceImage && !isAllowedImageRef(opts.referenceImage)) {
+      throw new Error(
+        "reference_image must be an http(s) URL or a data: image URL.",
+      );
     }
 
     const content: OpenRouterContent = opts.referenceImage
@@ -96,9 +130,7 @@ export class OpenRouterClient {
       });
     }
 
-    // Pure image models accept only ["image"]; chat-image models want both.
-    const modalities =
-      this.config.modelType === "image" ? ["image"] : ["image", "text"];
+    const modalities = modalitiesForModelType(this.config.modelType);
 
     const body: Record<string, unknown> = {
       model: this.config.imageModel,

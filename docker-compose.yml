@@ -1,19 +1,21 @@
-# Docker Compose deployment for Dokploy.
+# Self-hosting with Docker Compose.
 #
-# In Dokploy: create a "Compose" application, point it at this repository and
-# set the environment variables below in the Dokploy "Environment" tab. Attach
-# a domain to the service in the Dokploy UI (Dokploy injects the Traefik labels
-# and TLS automatically) and set PUBLIC_BASE_URL to that domain so the shared
-# image links are stable.
+#   1. cp .env.example .env   # then fill in OPENROUTER_API_KEY etc.
+#   2. docker compose up -d --build
+#
+# Put this service behind a reverse proxy (Caddy, nginx, Traefik, ...) that
+# terminates TLS, and set PUBLIC_BASE_URL to the public https URL so the
+# generated image links are stable.
 
 services:
   image-gen-mcp:
     build:
       context: .
       dockerfile: Dockerfile
-    # Or use a prebuilt image instead of building:
-    # image: ghcr.io/perzeuss/image-gen-mcp:latest
+    image: image-gen-mcp:latest
     restart: unless-stopped
+    ports:
+      - "${PORT:-3000}:3000"
     environment:
       # --- Required ---------------------------------------------------------
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:?set OPENROUTER_API_KEY}
@@ -28,27 +30,40 @@ services:
       IMAGE_MODEL_TYPE: ${IMAGE_MODEL_TYPE:-auto}
 
       # --- Public links -----------------------------------------------------
-      # Domain attached to this service in Dokploy. Used to build shareable
-      # image links, e.g. https://images.example.com/images/<file>.
+      # Public URL this server is reachable at. Used to build shareable image
+      # links, e.g. https://images.example.com/images/<file>.
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
 
       # --- Optional ---------------------------------------------------------
       PORT: ${PORT:-3000}
-      # Protect the /mcp endpoint with a bearer token (recommended for a
-      # public deployment, since the server holds your OpenRouter key).
+      # Protect the /mcp endpoint with a bearer token (recommended, since the
+      # server holds your OpenRouter key).
       MCP_AUTH_TOKEN: ${MCP_AUTH_TOKEN:-}
       DEFAULT_ASPECT_RATIO: ${DEFAULT_ASPECT_RATIO:-}
       DEFAULT_IMAGE_SIZE: ${DEFAULT_IMAGE_SIZE:-}
       REQUEST_TIMEOUT_MS: ${REQUEST_TIMEOUT_MS:-120000}
       IMAGE_STORAGE_DIR: /app/data/images
+
+      # --- OAuth (required to use this as a Claude custom connector) --------
+      # Set OAUTH_PASSWORD to enable the built-in OAuth 2.1 server. Point
+      # OAUTH_ISSUER_URL (or PUBLIC_BASE_URL) at this server's public https URL.
+      OAUTH_PASSWORD: ${OAUTH_PASSWORD:-}
+      OAUTH_ISSUER_URL: ${OAUTH_ISSUER_URL:-}
+      OAUTH_SIGNING_SECRET: ${OAUTH_SIGNING_SECRET:-}
+      OAUTH_ACCESS_TOKEN_TTL: ${OAUTH_ACCESS_TOKEN_TTL:-3600}
+      OAUTH_REFRESH_TOKEN_TTL: ${OAUTH_REFRESH_TOKEN_TTL:-2592000}
+
+      # --- Optional Cloudflare R2 storage (preferred when set) -------------
+      R2_BUCKET: ${R2_BUCKET:-}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
+      R2_ACCOUNT_ID: ${R2_ACCOUNT_ID:-}
+      R2_ENDPOINT: ${R2_ENDPOINT:-}
+      R2_PUBLIC_BASE_URL: ${R2_PUBLIC_BASE_URL:-}
+      R2_KEY_PREFIX: ${R2_KEY_PREFIX:-}
     volumes:
-      # Persist generated images across redeploys.
+      # Persist generated images across restarts (local storage backend).
       - image-data:/app/data/images
-    expose:
-      - "3000"
-    # For local testing without a reverse proxy, publish the port directly:
-    # ports:
-    #   - "3000:3000"
 
 volumes:
   image-data:
