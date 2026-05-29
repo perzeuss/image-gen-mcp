@@ -23,6 +23,9 @@ RUN npm ci --omit=dev
 # --- Stage 4: minimal runtime image ----------------------------------------
 FROM node:24-alpine AS runtime
 WORKDIR /app
+LABEL org.opencontainers.image.source="https://github.com/perzeuss/image-gen-mcp" \
+      org.opencontainers.image.description="Remote MCP server for OpenRouter image generation, usable as a Claude custom connector." \
+      org.opencontainers.image.licenses="MIT"
 ENV NODE_ENV=production \
     PORT=3000 \
     IMAGE_STORAGE_DIR=/app/data/images

@@ -9,10 +9,13 @@
 
 services:
   image-gen-mcp:
+    # Build locally, or comment out `build:` and use the prebuilt image below.
     build:
       context: .
       dockerfile: Dockerfile
     image: image-gen-mcp:latest
+    # Prebuilt multi-arch image (remove the `build:` block above to use it):
+    # image: ghcr.io/perzeuss/image-gen-mcp:latest
     restart: unless-stopped
     ports:
       - "${PORT:-3000}:3000"
