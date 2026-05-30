@@ -8,6 +8,11 @@ updates:
     commit-message:
       prefix: "chore"
       include: scope
+    groups:
+      # One PR for all non-major npm updates; majors stay separate for review.
+      npm-minor-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
     ignore:
       # Bundled deep inside the `npm` CLI that semantic-release pulls in at
       # release time only. Dev-only (the shipped image is built with
@@ -20,3 +25,7 @@ updates:
       interval: weekly
     commit-message:
       prefix: "ci"
+    groups:
+      # One PR for all GitHub Actions updates.
+      github-actions:
+        patterns: ["*"]
