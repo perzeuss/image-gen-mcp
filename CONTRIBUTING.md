@@ -68,6 +68,13 @@ and `test` don't trigger a release on their own.
 > `github-actions` bot to push (disable/adjust branch protection accordingly,
 > or provide a token that can bypass it).
 
+## Dependencies
+
+Dependabot opens grouped weekly PRs (one for GitHub Actions, one for non-major
+npm updates; majors come individually). Non-major updates are **auto-merged**
+after CI-equivalent verification — this requires **Settings → General → Allow
+auto-merge** to be enabled. Major bumps are left for manual review.
+
 ## Pull requests
 
 - Keep PRs focused and reasonably small.
