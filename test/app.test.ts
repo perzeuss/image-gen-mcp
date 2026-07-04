@@ -167,6 +167,99 @@ describe("app: open mode", () => {
     assert.equal(files.length, 1);
     assert.match(files[0], /\.png$/);
   });
+
+  it("forwards reference images to OpenRouter for image-to-image", async () => {
+    const dir = await tmpStorage();
+    const { app } = await buildApp({
+      RATE_LIMIT_MAX: "0",
+      IMAGE_STORAGE_DIR: dir,
+    });
+
+    let sentBody: any;
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: any, init: any) => {
+      if (String(url).includes("openrouter.ai")) {
+        sentBody = JSON.parse(init.body);
+        const dataUrl = `data:image/png;base64,${Buffer.from("EDITED").toString("base64")}`;
+        const payload = {
+          choices: [
+            { message: { images: [{ image_url: { url: dataUrl } }] } },
+          ],
+        };
+        return new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return realFetch(url, init);
+    }) as typeof fetch;
+
+    const refs = [
+      "https://example.com/subject.png",
+      `data:image/png;base64,${Buffer.from("REF").toString("base64")}`,
+    ];
+
+    try {
+      const res = await request(app)
+        .post("/mcp")
+        .set("Accept", MCP_ACCEPT)
+        .send({
+          jsonrpc: "2.0",
+          id: 3,
+          method: "tools/call",
+          params: {
+            name: "generate_image",
+            arguments: {
+              prompt: "turn the subject into a watercolor painting",
+              negative_prompt: "text, watermarks",
+              reference_images: refs,
+            },
+          },
+        });
+      assert.equal(res.status, 200);
+      const result = parseSse(res.text).result;
+      assert.notEqual(result.isError, true);
+      assert.ok(result.content.some((c: any) => c.type === "image"));
+
+      // The prompt and both reference images share one multimodal message.
+      const content = sentBody.messages[0].content;
+      assert.equal(content[0].type, "text");
+      assert.deepEqual(
+        content.slice(1).map((p: any) => p.image_url.url),
+        refs,
+      );
+      // The negative prompt is not dropped in img2img mode.
+      assert.match(
+        JSON.stringify(sentBody.messages[1]),
+        /negative prompt/i,
+      );
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
+  it("rejects disallowed reference image schemes", async () => {
+    const { app } = await buildApp({ RATE_LIMIT_MAX: "0" });
+    const res = await request(app)
+      .post("/mcp")
+      .set("Accept", MCP_ACCEPT)
+      .send({
+        jsonrpc: "2.0",
+        id: 4,
+        method: "tools/call",
+        params: {
+          name: "generate_image",
+          arguments: {
+            prompt: "a fox",
+            reference_images: ["file:///etc/passwd"],
+          },
+        },
+      });
+    assert.equal(res.status, 200);
+    const result = parseSse(res.text).result;
+    assert.equal(result.isError, true);
+    assert.match(result.content[0].text, /http\(s\) URL or a data: image URL/);
+  });
 });
 
 describe("app: rate limiting", () => {

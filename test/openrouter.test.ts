@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  buildMessages,
   isAllowedImageRef,
+  MAX_REFERENCE_IMAGES,
   modalitiesForModelType,
   parseDataUrl,
 } from "../src/openrouter.js";
@@ -51,6 +53,90 @@ describe("parseDataUrl", () => {
   it("returns null for non data URLs", () => {
     assert.equal(parseDataUrl("https://example.com/x.png"), null);
     assert.equal(parseDataUrl("not a url"), null);
+  });
+});
+
+describe("buildMessages", () => {
+  it("uses a plain string content for text-to-image", () => {
+    const messages = buildMessages({ prompt: "a red fox" });
+    assert.deepEqual(messages, [{ role: "user", content: "a red fox" }]);
+  });
+
+  it("builds multimodal content for a single reference image (img2img)", () => {
+    const messages = buildMessages({
+      prompt: "make it a watercolor painting",
+      referenceImages: ["https://example.com/fox.png"],
+    });
+    assert.equal(messages.length, 1);
+    assert.deepEqual(messages[0].content, [
+      { type: "text", text: "make it a watercolor painting" },
+      {
+        type: "image_url",
+        image_url: { url: "https://example.com/fox.png" },
+      },
+    ]);
+  });
+
+  it("includes every reference image as its own content part", () => {
+    const refs = [
+      "https://example.com/subject.png",
+      "https://example.com/style.png",
+      "data:image/png;base64,AAAA",
+    ];
+    const messages = buildMessages({
+      prompt: "combine the subject with the style",
+      referenceImages: refs,
+    });
+    const content = messages[0].content;
+    assert.ok(Array.isArray(content));
+    assert.deepEqual(
+      content.slice(1).map((part) => (part as any).image_url.url),
+      refs,
+    );
+  });
+
+  it("keeps the negative prompt when reference images are given", () => {
+    const messages = buildMessages({
+      prompt: "restyle the photo",
+      negativePrompt: "text, watermarks",
+      referenceImages: ["https://example.com/photo.png"],
+    });
+    assert.equal(messages.length, 2);
+    assert.match(String(messages[1].content), /negative prompt.*watermarks/i);
+  });
+
+  it("ignores empty/whitespace reference entries", () => {
+    const messages = buildMessages({
+      prompt: "a fox",
+      referenceImages: ["  ", ""],
+    });
+    assert.deepEqual(messages, [{ role: "user", content: "a fox" }]);
+  });
+
+  it("rejects disallowed reference image schemes", () => {
+    assert.throws(
+      () =>
+        buildMessages({
+          prompt: "a fox",
+          referenceImages: ["file:///etc/passwd"],
+        }),
+      /http\(s\) URL or a data: image URL/,
+    );
+  });
+
+  it("rejects more than the maximum number of reference images", () => {
+    const refs = Array.from(
+      { length: MAX_REFERENCE_IMAGES + 1 },
+      (_, i) => `https://example.com/${i}.png`,
+    );
+    assert.throws(
+      () => buildMessages({ prompt: "a fox", referenceImages: refs }),
+      /Too many reference images/,
+    );
+  });
+
+  it("rejects an empty prompt", () => {
+    assert.throws(() => buildMessages({ prompt: "   " }), /must not be empty/);
   });
 });
 

@@ -147,8 +147,25 @@ straight into the artifact it's building.
 
 | Tool                   | Description                                                                                                                                                                                                 |
 | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `generate_image`       | Generate an image from a prompt. Params: `prompt` (required), `aspect_ratio`, `image_size`, `negative_prompt`, `seed`, `reference_image` (image-to-image). Returns the inline image **and** its public URL. |
+| `generate_image`       | Generate an image from a prompt. Params: `prompt` (required), `aspect_ratio`, `image_size`, `negative_prompt`, `seed`, `reference_images` (image-to-image, see below). Returns the inline image **and** its public URL. |
 | `get_image_model_info` | Report the configured model and how it's driven (chat vs. image).                                                                                                                                           |
+
+### 🖌️ Image-to-image (editing & restyling)
+
+`generate_image` also does image-to-image: pass up to 8 `reference_images`
+(http(s) URLs or `data:image/...;base64,...` data URLs) together with a prompt
+describing the transformation:
+
+- **Edit / restyle** one image — _“make this photo look like a watercolor
+  painting”_ with the image as the single reference.
+- **Combine** several images — e.g. a subject shot plus a style reference.
+- **Iterate on generated images** — the public URL returned by a previous
+  `generate_image` call can be used directly as a reference, so Claude can
+  refine its own results (_“same image, but at night”_).
+
+The single `reference_image` (string) parameter is still accepted for backward
+compatibility. Reference-image support depends on the configured model —
+chat-style image models such as NanoBanana / Gemini Flash Image handle it best.
 
 ## ⚙️ Configuration
 
@@ -257,7 +274,8 @@ Claude  ──POST /mcp──▶  image-gen-mcp  ──▶  OpenRouter chat/comp
   or a **constant-time** static bearer-token check (`MCP_AUTH_TOKEN`) for
   direct access — plus an optional `Origin` allow-list (`ALLOWED_ORIGINS`).
 - **Input validation** — bounded prompt/seed/aspect-ratio inputs and a body-size
-  limit; `reference_image` is restricted to `http(s)` and `data:` image URLs.
+  limit; reference images are restricted to `http(s)` and `data:` image URLs
+  and capped in number.
 - **Runs as a non-root user** in the container, behind `tini` for clean
   shutdowns, with graceful `SIGTERM`/`SIGINT` handling.
 - **Supply chain** — released images ship an **SBOM** + **SLSA provenance** and

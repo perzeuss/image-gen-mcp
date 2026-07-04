@@ -10,7 +10,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
 import type { Config } from "./config.js";
-import type { OpenRouterClient } from "./openrouter.js";
+import { MAX_REFERENCE_IMAGES, type OpenRouterClient } from "./openrouter.js";
 import type { ImageStorage } from "./storage.js";
 
 export interface ServerContext {
@@ -37,7 +37,9 @@ export function buildMcpServer(ctx: ServerContext): McpServer {
         "Generate an image from a text prompt using the configured OpenRouter image model " +
         `(currently "${config.imageModel}"). The image is stored on the server and a public ` +
         "link is returned in addition to the inline image. Supports optional aspect ratio, " +
-        "image size, negative prompt, seed and a reference image for image-to-image.",
+        "image size, negative prompt, seed and image-to-image: pass one or more reference " +
+        "images (e.g. the public URL of a previously generated image) to edit, restyle, " +
+        "combine or otherwise transform them according to the prompt.",
       inputSchema: {
         prompt: z
           .string()
@@ -62,9 +64,7 @@ export function buildMcpServer(ctx: ServerContext): McpServer {
           .string()
           .max(4000)
           .optional()
-          .describe(
-            "Things to avoid in the image (ignored when a reference image is given).",
-          ),
+          .describe("Things to avoid in the image."),
         seed: z
           .number()
           .int()
@@ -77,20 +77,35 @@ export function buildMcpServer(ctx: ServerContext): McpServer {
           .max(15_000_000)
           .optional()
           .describe(
-            "Optional reference image for image-to-image, as an http(s) URL or a data URL " +
-              '("data:image/png;base64,...").',
+            "Single reference image for image-to-image, as an http(s) URL or a data URL " +
+              '("data:image/png;base64,..."). Prefer reference_images for new integrations.',
+          ),
+        reference_images: z
+          .array(z.string().min(1).max(15_000_000))
+          .max(MAX_REFERENCE_IMAGES)
+          .optional()
+          .describe(
+            "Reference images for image-to-image, each an http(s) URL or a data URL " +
+              '("data:image/png;base64,..."). Use one image to edit or restyle it, or ' +
+              "several to combine subjects / transfer style (model dependent, up to " +
+              `${MAX_REFERENCE_IMAGES}). Public URLs of previously generated images work too.`,
           ),
       },
     },
     async (args) => {
       try {
+        const referenceImages = [
+          ...(args.reference_image ? [args.reference_image] : []),
+          ...(args.reference_images ?? []),
+        ];
+
         const result = await client.generateImage({
           prompt: args.prompt,
           aspectRatio: args.aspect_ratio,
           imageSize: args.image_size,
           negativePrompt: args.negative_prompt,
           seed: args.seed,
-          referenceImage: args.reference_image,
+          referenceImages,
         });
 
         const content: Array<
