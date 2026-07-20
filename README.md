@@ -145,33 +145,81 @@ straight into the artifact it's building.
 
 ## 🛠️ Tools
 
-| Tool                   | Description                                                                                                                                                                                                 |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `generate_image`       | Generate an image from a prompt. Params: `prompt` (required), `aspect_ratio`, `image_size`, `negative_prompt`, `seed`, `reference_image` (image-to-image). Returns the inline image **and** its public URL. |
-| `get_image_model_info` | Report the configured model and how it's driven (chat vs. image).                                                                                                                                           |
+| Tool                   | Description                                                                                                                                                                                                             |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `generate_image`       | Generate an image from a prompt. Params: `prompt` (required), `aspect_ratio`, `image_size`, `negative_prompt`, `seed`, `reference_images` (image-to-image, see below). Returns the inline image **and** its public URL. |
+| `create_upload_url`    | Get one or more short-lived upload URLs for sending local reference images as raw bytes instead of base64 (see below).                                                                                                  |
+| `get_image_model_info` | Report the configured model and how it's driven (chat vs. image).                                                                                                                                                       |
+
+### 🖌️ Image-to-image (editing & restyling)
+
+`generate_image` also does image-to-image: pass up to 8 `reference_images`
+(http(s) URLs or `data:image/...;base64,...` data URLs) together with a prompt
+describing the transformation:
+
+- **Edit / restyle** one image — _“make this photo look like a watercolor
+  painting”_ with the image as the single reference.
+- **Combine** several images — e.g. a subject shot plus a style reference.
+- **Iterate on generated images** — the public URL returned by a previous
+  `generate_image` call can be used directly as a reference, so Claude can
+  refine its own results (_“same image, but at night”_).
+
+The single `reference_image` (string) parameter is still accepted for backward
+compatibility. Reference-image support depends on the configured model —
+chat-style image models such as NanoBanana / Gemini Flash Image handle it best.
+
+#### Uploading a local reference image (no base64 needed)
+
+`reference_images` only accepts http(s) URLs or `data:image/...;base64,...`
+URLs — fine for a previously generated image (already has a public URL), but
+not for a local file: it doesn't have a public URL, and inlining it as base64
+means whoever drives the tool call has to reproduce a huge, error-prone string.
+
+Instead, call `create_upload_url` first:
+
+1. `create_upload_url` (optionally `{ "count": 3 }` for several images) →
+   returns one or more short-lived `upload_url`s.
+2. `PUT` the raw image bytes to an `upload_url`, with `Content-Type` set to
+   `image/png`, `image/jpeg`, `image/webp` or `image/gif` — a plain binary
+   HTTP request, not a tool call, so there's no base64 involved and no size
+   limit on the tool-call payload:
+   ```bash
+   curl -X PUT "$UPLOAD_URL" -H "Content-Type: image/png" --data-binary @photo.png
+   ```
+   The response is `{"url": "https://.../images/<file>.png"}`.
+3. Pass that `url` as an entry in `generate_image`'s `reference_images`, same
+   as any other public URL.
+
+Upload URLs are single-purpose, HMAC-signed and expire quickly
+(`UPLOAD_URL_TTL_SECONDS`, default 10 minutes). The uploaded bytes are also
+verified against their real image signature server-side — a spoofed
+`Content-Type` header alone can't get non-image content stored.
 
 ## ⚙️ Configuration
 
 All configuration is via environment variables.
 
-| Variable               | Required | Default                         | Description                                                                                                                             |
-| ---------------------- | :------: | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `OPENROUTER_API_KEY`   |    ✅    | —                               | OpenRouter API key.                                                                                                                     |
-| `IMAGE_MODEL`          |          | `google/gemini-2.5-flash-image` | OpenRouter model id.                                                                                                                    |
-| `IMAGE_MODEL_TYPE`     |          | `auto`                          | `auto` \| `chat` \| `image`. `auto` detects from the model id (Flux/Recraft/Seedream/Riverflow/Ideogram/… ⇒ `image`, otherwise `chat`). |
-| `PUBLIC_BASE_URL`      |          | _(request host)_                | Public base URL for **local** image links, e.g. `https://images.example.com`. Set this in production.                                   |
-| `PORT`                 |          | `3000`                          | Listen port.                                                                                                                            |
-| `HOST`                 |          | `0.0.0.0`                       | Bind address.                                                                                                                           |
-| `IMAGE_STORAGE_DIR`    |          | `./data/images`                 | Local storage directory (ignored when R2 is used).                                                                                      |
-| `MCP_AUTH_TOKEN`       |          | _(none)_                        | If set, `POST /mcp` requires `Authorization: Bearer <token>`.                                                                           |
-| `DEFAULT_ASPECT_RATIO` |          | _(none)_                        | Default aspect ratio when a request omits one.                                                                                          |
-| `DEFAULT_IMAGE_SIZE`   |          | _(none)_                        | Default image size (`1K`/`2K`/`4K`).                                                                                                    |
-| `REQUEST_TIMEOUT_MS`   |          | `120000`                        | OpenRouter request timeout.                                                                                                             |
-| `TRUST_PROXY`          |          | `true`                          | Trust `X-Forwarded-*` headers (keep on behind a proxy).                                                                                 |
-| `MAX_BODY_SIZE`        |          | `25mb`                          | Max accepted request body size.                                                                                                         |
-| `RATE_LIMIT_MAX`       |          | `60`                            | Per-IP requests per window (`0` disables).                                                                                              |
-| `RATE_LIMIT_WINDOW_MS` |          | `60000`                         | Rate-limit window in ms.                                                                                                                |
-| `ALLOWED_ORIGINS`      |          | _(all)_                         | Comma-separated `Origin` allow-list for `/mcp`.                                                                                         |
+| Variable                 | Required | Default                         | Description                                                                                                                             |
+| ------------------------ | :------: | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `OPENROUTER_API_KEY`     |    ✅    | —                               | OpenRouter API key.                                                                                                                     |
+| `IMAGE_MODEL`            |          | `google/gemini-2.5-flash-image` | OpenRouter model id.                                                                                                                    |
+| `IMAGE_MODEL_TYPE`       |          | `auto`                          | `auto` \| `chat` \| `image`. `auto` detects from the model id (Flux/Recraft/Seedream/Riverflow/Ideogram/… ⇒ `image`, otherwise `chat`). |
+| `PUBLIC_BASE_URL`        |          | _(request host)_                | Public base URL for **local** image links, e.g. `https://images.example.com`. Set this in production.                                   |
+| `PORT`                   |          | `3000`                          | Listen port.                                                                                                                            |
+| `HOST`                   |          | `0.0.0.0`                       | Bind address.                                                                                                                           |
+| `IMAGE_STORAGE_DIR`      |          | `./data/images`                 | Local storage directory (ignored when R2 is used).                                                                                      |
+| `MCP_AUTH_TOKEN`         |          | _(none)_                        | If set, `POST /mcp` requires `Authorization: Bearer <token>`.                                                                           |
+| `DEFAULT_ASPECT_RATIO`   |          | _(none)_                        | Default aspect ratio when a request omits one.                                                                                          |
+| `DEFAULT_IMAGE_SIZE`     |          | _(none)_                        | Default image size (`1K`/`2K`/`4K`).                                                                                                    |
+| `REQUEST_TIMEOUT_MS`     |          | `120000`                        | OpenRouter request timeout.                                                                                                             |
+| `TRUST_PROXY`            |          | `true`                          | Trust `X-Forwarded-*` headers (keep on behind a proxy).                                                                                 |
+| `MAX_BODY_SIZE`          |          | `25mb`                          | Max accepted request body size.                                                                                                         |
+| `RATE_LIMIT_MAX`         |          | `60`                            | Per-IP requests per window (`0` disables).                                                                                              |
+| `RATE_LIMIT_WINDOW_MS`   |          | `60000`                         | Rate-limit window in ms.                                                                                                                |
+| `ALLOWED_ORIGINS`        |          | _(all)_                         | Comma-separated `Origin` allow-list for `/mcp`.                                                                                         |
+| `UPLOAD_SIGNING_SECRET`  |          | _(random)_                      | HMAC secret signing reference-image upload URLs. Set in production so upload URLs survive restarts and work across instances.           |
+| `UPLOAD_URL_TTL_SECONDS` |          | `600`                           | Lifetime of a reference-image upload URL, in seconds.                                                                                   |
+| `MAX_UPLOAD_SIZE`        |          | `15mb`                          | Max accepted size for a single reference-image upload.                                                                                  |
 
 ### OAuth (for the Claude connector)
 
@@ -257,7 +305,14 @@ Claude  ──POST /mcp──▶  image-gen-mcp  ──▶  OpenRouter chat/comp
   or a **constant-time** static bearer-token check (`MCP_AUTH_TOKEN`) for
   direct access — plus an optional `Origin` allow-list (`ALLOWED_ORIGINS`).
 - **Input validation** — bounded prompt/seed/aspect-ratio inputs and a body-size
-  limit; `reference_image` is restricted to `http(s)` and `data:` image URLs.
+  limit; reference images are restricted to `http(s)` and `data:` image URLs
+  and capped in number.
+- **Reference-image uploads, hardened in two independent layers** —
+  `create_upload_url` mints short-lived, HMAC-signed, purpose-scoped tokens
+  (not reusable as any other kind of token, and rejected once expired), and on
+  top of that every upload is rate-limited separately from general API traffic
+  and its bytes are verified against a real image signature server-side, so a
+  spoofed `Content-Type` header alone can't smuggle non-image content in.
 - **Runs as a non-root user** in the container, behind `tini` for clean
   shutdowns, with graceful `SIGTERM`/`SIGINT` handling.
 - **Supply chain** — released images ship an **SBOM** + **SLSA provenance** and

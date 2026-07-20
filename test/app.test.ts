@@ -25,6 +25,9 @@ const ENV_KEYS = [
   "OAUTH_SIGNING_SECRET",
   "OAUTH_ACCESS_TOKEN_TTL",
   "OAUTH_REFRESH_TOKEN_TTL",
+  "UPLOAD_SIGNING_SECRET",
+  "UPLOAD_URL_TTL_SECONDS",
+  "MAX_UPLOAD_SIZE",
 ];
 
 /** Build an app with a clean, controlled environment. */
@@ -109,6 +112,7 @@ describe("app: open mode", () => {
     const tools = parseSse(res.text).result.tools.map((t: any) => t.name);
     assert.ok(tools.includes("generate_image"));
     assert.ok(tools.includes("get_image_model_info"));
+    assert.ok(tools.includes("create_upload_url"));
   });
 
   it("generates an image, stores it and returns a public link", async () => {
@@ -166,6 +170,218 @@ describe("app: open mode", () => {
     const files = await readdir(dir);
     assert.equal(files.length, 1);
     assert.match(files[0], /\.png$/);
+  });
+
+  it("forwards reference images to OpenRouter for image-to-image", async () => {
+    const dir = await tmpStorage();
+    const { app } = await buildApp({
+      RATE_LIMIT_MAX: "0",
+      IMAGE_STORAGE_DIR: dir,
+    });
+
+    let sentBody: any;
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: any, init: any) => {
+      if (String(url).includes("openrouter.ai")) {
+        sentBody = JSON.parse(init.body);
+        const dataUrl = `data:image/png;base64,${Buffer.from("EDITED").toString("base64")}`;
+        const payload = {
+          choices: [{ message: { images: [{ image_url: { url: dataUrl } }] } }],
+        };
+        return new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return realFetch(url, init);
+    }) as typeof fetch;
+
+    const refs = [
+      "https://example.com/subject.png",
+      `data:image/png;base64,${Buffer.from("REF").toString("base64")}`,
+    ];
+
+    try {
+      const res = await request(app)
+        .post("/mcp")
+        .set("Accept", MCP_ACCEPT)
+        .send({
+          jsonrpc: "2.0",
+          id: 3,
+          method: "tools/call",
+          params: {
+            name: "generate_image",
+            arguments: {
+              prompt: "turn the subject into a watercolor painting",
+              negative_prompt: "text, watermarks",
+              reference_images: refs,
+            },
+          },
+        });
+      assert.equal(res.status, 200);
+      const result = parseSse(res.text).result;
+      assert.notEqual(result.isError, true);
+      assert.ok(result.content.some((c: any) => c.type === "image"));
+
+      // The prompt and both reference images share one multimodal message.
+      const content = sentBody.messages[0].content;
+      assert.equal(content[0].type, "text");
+      assert.deepEqual(
+        content.slice(1).map((p: any) => p.image_url.url),
+        refs,
+      );
+      // The negative prompt is not dropped in img2img mode.
+      assert.match(JSON.stringify(sentBody.messages[1]), /negative prompt/i);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
+  it("rejects disallowed reference image schemes", async () => {
+    const { app } = await buildApp({ RATE_LIMIT_MAX: "0" });
+    const res = await request(app)
+      .post("/mcp")
+      .set("Accept", MCP_ACCEPT)
+      .send({
+        jsonrpc: "2.0",
+        id: 4,
+        method: "tools/call",
+        params: {
+          name: "generate_image",
+          arguments: {
+            prompt: "a fox",
+            reference_images: ["file:///etc/passwd"],
+          },
+        },
+      });
+    assert.equal(res.status, 200);
+    const result = parseSse(res.text).result;
+    assert.equal(result.isError, true);
+    assert.match(result.content[0].text, /http\(s\) URL or a data: image URL/);
+  });
+});
+
+describe("app: reference image uploads", () => {
+  /** Minimal but byte-signature-valid PNG payload (not a decodable image, just correct magic bytes). */
+  function pngBytes(): Buffer {
+    return Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      Buffer.from("not a real png but has the right signature"),
+    ]);
+  }
+
+  async function createUploadUrl(app: any): Promise<string> {
+    const res = await request(app)
+      .post("/mcp")
+      .set("Accept", MCP_ACCEPT)
+      .send({
+        jsonrpc: "2.0",
+        id: 10,
+        method: "tools/call",
+        params: { name: "create_upload_url", arguments: {} },
+      });
+    assert.equal(res.status, 200);
+    const result = parseSse(res.text).result;
+    assert.notEqual(result.isError, true);
+    const payload = JSON.parse(result.content[0].text);
+    assert.equal(payload.uploads.length, 1);
+    return payload.uploads[0].upload_url as string;
+  }
+
+  it("creates upload URLs and accepts a real image upload", async () => {
+    const dir = await tmpStorage();
+    const { app } = await buildApp({
+      RATE_LIMIT_MAX: "0",
+      IMAGE_STORAGE_DIR: dir,
+    });
+
+    const uploadUrl = await createUploadUrl(app);
+    const uploadPath = new URL(uploadUrl, "http://localhost").pathname;
+
+    const res = await request(app)
+      .put(uploadPath)
+      .set("Content-Type", "image/png")
+      .send(pngBytes());
+    assert.equal(res.status, 200);
+    assert.match(res.body.url, /\/images\/.+\.png$/);
+
+    const files = await readdir(dir);
+    assert.equal(files.length, 1);
+    assert.match(files[0], /\.png$/);
+  });
+
+  it("supports creating several upload URLs at once", async () => {
+    const { app } = await buildApp({ RATE_LIMIT_MAX: "0" });
+    const res = await request(app)
+      .post("/mcp")
+      .set("Accept", MCP_ACCEPT)
+      .send({
+        jsonrpc: "2.0",
+        id: 11,
+        method: "tools/call",
+        params: { name: "create_upload_url", arguments: { count: 3 } },
+      });
+    const result = parseSse(res.text).result;
+    const payload = JSON.parse(result.content[0].text);
+    assert.equal(payload.uploads.length, 3);
+    const urls = payload.uploads.map((u: any) => u.upload_url);
+    assert.equal(new Set(urls).size, 3);
+  });
+
+  it("rejects an invalid or unsigned token", async () => {
+    const { app } = await buildApp({ RATE_LIMIT_MAX: "0" });
+    const res = await request(app)
+      .put("/uploads/not-a-real-token")
+      .set("Content-Type", "image/png")
+      .send(pngBytes());
+    assert.equal(res.status, 401);
+  });
+
+  it("rejects an expired upload URL", async () => {
+    const { app } = await buildApp({
+      RATE_LIMIT_MAX: "0",
+      UPLOAD_URL_TTL_SECONDS: "-5",
+    });
+    const uploadUrl = await createUploadUrl(app);
+    const uploadPath = new URL(uploadUrl, "http://localhost").pathname;
+    const res = await request(app)
+      .put(uploadPath)
+      .set("Content-Type", "image/png")
+      .send(pngBytes());
+    assert.equal(res.status, 401);
+  });
+
+  it("rejects a disallowed content type", async () => {
+    const { app } = await buildApp({ RATE_LIMIT_MAX: "0" });
+    const uploadUrl = await createUploadUrl(app);
+    const uploadPath = new URL(uploadUrl, "http://localhost").pathname;
+    const res = await request(app)
+      .put(uploadPath)
+      .set("Content-Type", "text/plain")
+      .send(Buffer.from("hello"));
+    assert.equal(res.status, 415);
+  });
+
+  it("rejects bytes that don't match the declared image type (spoofed Content-Type)", async () => {
+    const { app } = await buildApp({ RATE_LIMIT_MAX: "0" });
+    const uploadUrl = await createUploadUrl(app);
+    const uploadPath = new URL(uploadUrl, "http://localhost").pathname;
+    const res = await request(app)
+      .put(uploadPath)
+      .set("Content-Type", "image/png")
+      .send(Buffer.from("this is definitely not a png"));
+    assert.equal(res.status, 415);
+  });
+
+  it("rejects an empty upload body", async () => {
+    const { app } = await buildApp({ RATE_LIMIT_MAX: "0" });
+    const uploadUrl = await createUploadUrl(app);
+    const uploadPath = new URL(uploadUrl, "http://localhost").pathname;
+    const res = await request(app)
+      .put(uploadPath)
+      .set("Content-Type", "image/png")
+      .send(Buffer.alloc(0));
+    assert.equal(res.status, 400);
   });
 });
 

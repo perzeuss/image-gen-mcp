@@ -19,14 +19,20 @@ export function modalitiesForModelType(type: ModelType): string[] {
   return type === "image" ? ["image"] : ["image", "text"];
 }
 
+/** Maximum number of reference images accepted for image-to-image requests. */
+export const MAX_REFERENCE_IMAGES = 8;
+
 export interface GenerateOptions {
   prompt: string;
   aspectRatio?: string;
   imageSize?: string;
   negativePrompt?: string;
   seed?: number;
-  /** Optional reference image as a data URL or http(s) URL for image-to-image. */
-  referenceImage?: string;
+  /**
+   * Optional reference images (data URLs or http(s) URLs) for image-to-image:
+   * editing, restyling, combining subjects or transferring style.
+   */
+  referenceImages?: string[];
 }
 
 export interface GeneratedImage {
@@ -80,6 +86,63 @@ export function isAllowedImageRef(ref: string): boolean {
   }
 }
 
+/**
+ * Build the chat messages for a generation request. The prompt and any
+ * reference images share one user message (multimodal content parts); a
+ * negative prompt is passed as an additional instruction. Validates the
+ * reference images and throws on disallowed schemes or an empty prompt.
+ */
+export function buildMessages(
+  opts: GenerateOptions,
+): Array<{ role: string; content: OpenRouterContent }> {
+  const prompt = opts.prompt?.trim();
+  if (!prompt) {
+    throw new Error("Prompt must not be empty.");
+  }
+
+  const refs = (opts.referenceImages ?? [])
+    .map((ref) => ref.trim())
+    .filter((ref) => ref.length > 0);
+  if (refs.length > MAX_REFERENCE_IMAGES) {
+    throw new Error(
+      `Too many reference images: ${refs.length} (maximum is ${MAX_REFERENCE_IMAGES}).`,
+    );
+  }
+  for (const ref of refs) {
+    if (!isAllowedImageRef(ref)) {
+      throw new Error(
+        "Each reference image must be an http(s) URL or a data: image URL.",
+      );
+    }
+  }
+
+  const content: OpenRouterContent =
+    refs.length > 0
+      ? [
+          { type: "text", text: prompt },
+          ...refs.map(
+            (url): OpenRouterImagePart => ({
+              type: "image_url",
+              image_url: { url },
+            }),
+          ),
+        ]
+      : prompt;
+
+  const messages: Array<{ role: string; content: OpenRouterContent }> = [
+    { role: "user", content },
+  ];
+
+  if (opts.negativePrompt) {
+    messages.push({
+      role: "user",
+      content: `Avoid the following (negative prompt): ${opts.negativePrompt}`,
+    });
+  }
+
+  return messages;
+}
+
 /** Parse a data URL ("data:image/png;base64,....") into payload + mime type. */
 export function parseDataUrl(url: string): GeneratedImage | null {
   const match = /^data:([^;,]+)?(;base64)?,(.*)$/s.exec(url);
@@ -101,35 +164,7 @@ export class OpenRouterClient {
   constructor(private readonly config: Config) {}
 
   async generateImage(opts: GenerateOptions): Promise<GenerateResult> {
-    const prompt = opts.prompt?.trim();
-    if (!prompt) {
-      throw new Error("Prompt must not be empty.");
-    }
-
-    if (opts.referenceImage && !isAllowedImageRef(opts.referenceImage)) {
-      throw new Error(
-        "reference_image must be an http(s) URL or a data: image URL.",
-      );
-    }
-
-    const content: OpenRouterContent = opts.referenceImage
-      ? [
-          { type: "text", text: prompt },
-          { type: "image_url", image_url: { url: opts.referenceImage } },
-        ]
-      : prompt;
-
-    const messages: Array<{ role: string; content: OpenRouterContent }> = [
-      { role: "user", content },
-    ];
-
-    if (opts.negativePrompt && !opts.referenceImage) {
-      messages.push({
-        role: "user",
-        content: `Avoid the following (negative prompt): ${opts.negativePrompt}`,
-      });
-    }
-
+    const messages = buildMessages(opts);
     const modalities = modalitiesForModelType(this.config.modelType);
 
     const body: Record<string, unknown> = {

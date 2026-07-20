@@ -96,6 +96,17 @@ export interface Config {
   allowedOrigins?: string[];
   /** OAuth authorization server, enabled when OAUTH_PASSWORD is set. */
   oauth?: OAuthConfig;
+
+  // --- Reference-image uploads ---
+  /**
+   * HMAC secret used to sign short-lived reference-image upload URLs (see
+   * PUT /uploads/:token). Auto-generated (ephemeral) if unset.
+   */
+  uploadSigningSecret: string;
+  /** Lifetime of a reference-image upload URL, in seconds. */
+  uploadUrlTtlSeconds: number;
+  /** Max accepted size for a single reference-image upload (Express byte-size string). */
+  maxUploadSize: string;
 }
 
 /** Model id fragments that identify pure image-generation models. */
@@ -239,6 +250,23 @@ export function readOAuthConfig(): OAuthConfig | undefined {
 }
 
 /**
+ * Secret used to sign reference-image upload tokens. Falls back to an
+ * ephemeral random value (with a warning) so the feature works out of the
+ * box; set UPLOAD_SIGNING_SECRET in production so upload URLs survive
+ * restarts and are honoured by every instance behind a load balancer.
+ */
+export function readUploadSigningSecret(): string {
+  const configured = process.env.UPLOAD_SIGNING_SECRET?.trim();
+  if (configured) return configured;
+  console.warn(
+    "[config] UPLOAD_SIGNING_SECRET not set — generated an ephemeral one. " +
+      "Upload URLs are invalidated on restart and won't be honoured by other " +
+      "instances. Set UPLOAD_SIGNING_SECRET for production.",
+  );
+  return randomBytes(32).toString("hex");
+}
+
+/**
  * Parse the TRUST_PROXY env var. Accepts a number of hops, or `true`/`false`.
  * Defaults to 1 (a single reverse proxy) — not `true`, which is permissive and
  * lets clients spoof X-Forwarded-For to bypass IP-based rate limiting.
@@ -294,5 +322,11 @@ export function loadConfig(): Config {
       return list.length > 0 ? list : undefined;
     })(),
     oauth: readOAuthConfig(),
+    uploadSigningSecret: readUploadSigningSecret(),
+    uploadUrlTtlSeconds: Number.parseInt(
+      process.env.UPLOAD_URL_TTL_SECONDS || "600",
+      10,
+    ),
+    maxUploadSize: (process.env.MAX_UPLOAD_SIZE || "15mb").trim(),
   };
 }
