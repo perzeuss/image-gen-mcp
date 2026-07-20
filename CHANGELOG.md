@@ -1,3 +1,11 @@
+# [1.1.0](https://github.com/perzeuss/image-gen-mcp/compare/v1.0.2...v1.1.0) (2026-07-20)
+
+
+### Features
+
+* add signed upload URLs for reference images ([d2ee5a3](https://github.com/perzeuss/image-gen-mcp/commit/d2ee5a34f81071f6146955faaaf3639263dcc396))
+* extend generate_image with multi-reference image-to-image support ([2b3617f](https://github.com/perzeuss/image-gen-mcp/commit/2b3617f2ab5bc8d87b77a5e51610ec5f3fede7bf))
+
 ## [1.0.2](https://github.com/perzeuss/image-gen-mcp/compare/v1.0.1...v1.0.2) (2026-05-30)
 
 
