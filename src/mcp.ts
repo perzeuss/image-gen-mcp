@@ -12,6 +12,17 @@ import { z } from "zod";
 import type { Config } from "./config.js";
 import { MAX_REFERENCE_IMAGES, type OpenRouterClient } from "./openrouter.js";
 import type { ImageStorage } from "./storage.js";
+import { createUploadToken } from "./uploads.js";
+
+/** Build an absolute URL from a path, preferring PUBLIC_BASE_URL over the request origin. */
+function absoluteUrl(
+  config: Config,
+  urlPath: string,
+  requestOrigin?: string,
+): string {
+  const base = config.publicBaseUrl || requestOrigin;
+  return base ? `${base.replace(/\/+$/, "")}${urlPath}` : urlPath;
+}
 
 export interface ServerContext {
   config: Config;
@@ -39,7 +50,9 @@ export function buildMcpServer(ctx: ServerContext): McpServer {
         "link is returned in addition to the inline image. Supports optional aspect ratio, " +
         "image size, negative prompt, seed and image-to-image: pass one or more reference " +
         "images (e.g. the public URL of a previously generated image) to edit, restyle, " +
-        "combine or otherwise transform them according to the prompt.",
+        "combine or otherwise transform them according to the prompt. For a reference image " +
+        "that only exists as a local file, don't inline it as base64 — call create_upload_url " +
+        "first, PUT the file's bytes to the returned URL, and use the resulting public url here.",
       inputSchema: {
         prompt: z
           .string()
@@ -144,6 +157,57 @@ export function buildMcpServer(ctx: ServerContext): McpServer {
           ],
         };
       }
+    },
+  );
+
+  server.registerTool(
+    "create_upload_url",
+    {
+      title: "Create Reference Image Upload URL",
+      description:
+        "Get one or more short-lived upload URLs for sending reference images as raw bytes " +
+        "over plain HTTP PUT, instead of embedding them as base64 inside a tool call (which is " +
+        "unreliable for large images and doesn't work at all for local files this server can't " +
+        "read). PUT the image bytes to a returned upload_url (Content-Type: image/png, " +
+        "image/jpeg, image/webp or image/gif) before it expires; the response is " +
+        '{"url": "<public url>"} — pass that url as an entry in generate_image\'s ' +
+        "reference_images. Request one upload URL per reference image you plan to send, up to " +
+        `${MAX_REFERENCE_IMAGES}.`,
+      inputSchema: {
+        count: z
+          .number()
+          .int()
+          .min(1)
+          .max(MAX_REFERENCE_IMAGES)
+          .optional()
+          .describe(
+            `Number of upload URLs to create (default 1, max ${MAX_REFERENCE_IMAGES}).`,
+          ),
+      },
+    },
+    async (args) => {
+      const count = args.count ?? 1;
+      const uploads = Array.from({ length: count }, () => ({
+        upload_url: absoluteUrl(
+          config,
+          `/uploads/${createUploadToken(config.uploadSigningSecret, config.uploadUrlTtlSeconds)}`,
+          ctx.requestOrigin,
+        ),
+        expires_in_seconds: config.uploadUrlTtlSeconds,
+      }));
+
+      const summary = {
+        uploads,
+        instructions:
+          "For each upload_url: PUT the raw image bytes with Content-Type set to image/png, " +
+          'image/jpeg, image/webp or image/gif. The response is {"url": "<public url>"}; use ' +
+          "that url as a reference_images entry in generate_image. Each upload_url expires after " +
+          "expires_in_seconds.",
+      };
+
+      return {
+        content: [{ type: "text", text: JSON.stringify(summary, null, 2) }],
+      };
     },
   );
 

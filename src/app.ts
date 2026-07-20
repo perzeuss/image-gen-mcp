@@ -20,12 +20,13 @@ import { requireBearerAuth } from "@modelcontextprotocol/sdk/server/auth/middlew
 
 import type { Config } from "./config.js";
 import { OpenRouterClient } from "./openrouter.js";
-import { ImageStore } from "./storage.js";
+import { ImageStore, MIME_EXTENSIONS, sniffImageMime } from "./storage.js";
 import type { ImageStorage } from "./storage.js";
 import { createStorage } from "./r2.js";
 import { buildMcpServer } from "./mcp.js";
 import { StatelessOAuthProvider } from "./oauth.js";
 import { isOriginAllowed, safeStrEqual } from "./security.js";
+import { verifyUploadToken } from "./uploads.js";
 
 export type AuthMode = "oauth" | "token" | "open";
 
@@ -213,6 +214,85 @@ export async function createApp(config: Config): Promise<CreatedApp> {
       });
     });
   }
+
+  // Reference-image uploads: the client PUTs raw image bytes to a signed URL
+  // minted by the create_upload_url tool, avoiding giant base64 payloads
+  // inside MCP tool-call arguments. The signed token in the path is itself
+  // the credential (like a presigned S3 URL): whoever holds it came from an
+  // already-authenticated create_upload_url call, so no separate bearer auth
+  // is required here.
+  //
+  // Two independent layers of hardening beyond the general MCP protections:
+  //   1. A dedicated, tighter per-IP rate limit on top of the general one,
+  //      since legitimate upload volume (a handful of reference images per
+  //      generation) is naturally low.
+  //   2. The uploaded bytes are sniffed for a real image signature and stored
+  //      under that verified type — a client-declared Content-Type header is
+  //      never trusted on its own, so a spoofed header can't smuggle
+  //      non-image content onto the server.
+  const uploadGuards: RequestHandler[] = [originGuard];
+  if (config.rateLimitMax > 0) {
+    uploadGuards.push(
+      rateLimit({
+        windowMs: 10 * 60 * 1000,
+        limit: 30,
+        standardHeaders: true,
+        legacyHeaders: false,
+        message: {
+          error: "Too many uploads from this address, try again later.",
+        },
+      }),
+    );
+  }
+
+  app.put(
+    "/uploads/:token",
+    ...uploadGuards,
+    express.raw({ type: () => true, limit: config.maxUploadSize }),
+    async (req: Request, res: Response) => {
+      const token = String(req.params.token ?? "");
+      if (!verifyUploadToken(token, config.uploadSigningSecret)) {
+        res.status(401).json({ error: "Invalid or expired upload URL." });
+        return;
+      }
+
+      const contentType = (req.headers["content-type"] || "")
+        .split(";")[0]
+        .trim()
+        .toLowerCase();
+      if (!(contentType in MIME_EXTENSIONS)) {
+        res.status(415).json({
+          error:
+            `Unsupported content type "${contentType}". Use one of: ` +
+            `${Object.keys(MIME_EXTENSIONS).join(", ")}.`,
+        });
+        return;
+      }
+
+      const body = req.body;
+      if (!Buffer.isBuffer(body) || body.length === 0) {
+        res.status(400).json({ error: "Empty upload body." });
+        return;
+      }
+
+      // The declared Content-Type only gated the check above; persist under
+      // the format actually verified from the bytes themselves.
+      const sniffed = sniffImageMime(body);
+      if (!sniffed) {
+        res.status(415).json({
+          error:
+            "Upload content is not a recognized PNG, JPEG, GIF or WEBP image.",
+        });
+        return;
+      }
+
+      const { publicUrl } = await store.store(
+        { base64: body.toString("base64"), mimeType: sniffed },
+        requestOrigin(req),
+      );
+      res.json({ url: publicUrl });
+    },
+  );
 
   // Stateless Streamable HTTP MCP endpoint.
   app.post("/mcp", ...mcpGuards, async (req: Request, res: Response) => {
